@@ -1,12 +1,10 @@
 """
-Memory Manager - 记忆管理模块
-实现短期记忆和长期记忆
+Memory Manager - 记忆管理模块（简化版）
+实现短期记忆和对话历史
 """
-import json
 import time
 from typing import List, Dict, Any, Optional
 from collections import deque
-from ..rag.vector_store import VectorStore
 
 
 class Turn:
@@ -26,17 +24,13 @@ class Turn:
             "timestamp": self.timestamp
         }
 
-    def __str__(self) -> str:
-        return f"User: {self.user}\nAssistant: {self.assistant}"
-
 
 class MemoryManager:
-    """记忆管理器"""
+    """记忆管理器（简化版）"""
 
-    def __init__(self, vector_store: VectorStore, max_short_term: int = 10):
-        self.vector_store = vector_store
+    def __init__(self, max_short_term: int = 20):
         self.max_short_term = max_short_term
-        self.short_term: deque = deque(maxlen=max_short_term)  # 短期记忆
+        self.short_term: deque = deque(maxlen=max_short_term)
         self.session_id = None
         self.user_id = None
 
@@ -50,71 +44,6 @@ class MemoryManager:
         turn = Turn(user=user_msg, assistant=assistant_msg, tool_calls=tool_calls)
         self.short_term.append(turn)
 
-        # 检查是否需要总结并存储长期记忆
-        if len(self.short_term) >= self.max_short_term:
-            self._summarize_and_store()
-
-    def _summarize_and_store(self):
-        """总结短期记忆并存储到长期记忆"""
-        if not self.short_term:
-            return
-
-        # 提取关键信息
-        facts = []
-        for turn in self.short_term:
-            facts.append(f"用户问：{turn.user}")
-            facts.append(f"助手答：{turn.assistant}")
-            if turn.tool_calls:
-                for tc in turn.tool_calls:
-                    facts.append(f"调用工具：{tc.get('tool')}.{tc.get('action')}")
-
-        summary = "；".join(facts[-6:])  # 取最近的信息
-
-        # 存储到向量库
-        if self.user_id:
-            self.vector_store.add_texts(
-                collection="user_memory",
-                texts=[f"用户{self.user_id}的对话记忆：{summary}"],
-                metadatas=[{
-                    "user_id": self.user_id,
-                    "session_id": self.session_id,
-                    "type": "conversation_summary"
-                }]
-            )
-
-        # 清空短期记忆
-        self.short_term.clear()
-
-    def add_fact(self, content: str, memory_type: str = "fact"):
-        """添加事实到长期记忆"""
-        if not self.user_id:
-            return
-
-        self.vector_store.add_texts(
-            collection="user_memory",
-            texts=[content],
-            metadatas=[{
-                "user_id": self.user_id,
-                "memory_type": memory_type,
-                "session_id": self.session_id
-            }]
-        )
-
-    def search_memory(self, query: str, top_k: int = 3) -> List[Dict]:
-        """检索长期记忆"""
-        if not self.user_id:
-            return []
-
-        # 检索用户相关的记忆
-        results = self.vector_store.search(
-            collection="user_memory",
-            query=f"用户{self.user_id} {query}",
-            top_k=top_k
-        )
-
-        # 过滤只返回该用户相关的记忆
-        return [r for r in results if r["metadata"].get("user_id") == self.user_id]
-
     def get_recent_context(self, k: int = 5) -> str:
         """获取最近K轮对话"""
         recent = list(self.short_term)[-k:]
@@ -122,56 +51,38 @@ class MemoryManager:
             return ""
 
         lines = []
-        for i, turn in enumerate(recent):
-            lines.append(f"第{len(recent)-i}轮：用户：{turn.user}")
+        for turn in recent:
+            lines.append(f"用户：{turn.user}")
             if turn.tool_calls:
                 for tc in turn.tool_calls:
-                    lines.append(f"      工具：{tc.get('tool')}.{tc.get('action')}")
-            lines.append(f"      助手：{turn.assistant}")
+                    lines.append(f"  工具：{tc.get('tool')}.{tc.get('action')}")
+            lines.append(f"助手：{turn.assistant}")
 
         return "\n".join(lines)
 
     def get_context(self, user_input: str) -> Dict[str, Any]:
         """获取完整上下文"""
-        # 检索相关长期记忆
-        relevant_memories = self.search_memory(user_input)
-
-        # 获取短期记忆
-        recent = self.get_recent_context(3)
-
         return {
-            "relevant_memories": relevant_memories,
-            "recent_conversation": recent,
+            "recent_conversation": self.get_recent_context(5),
             "short_term_count": len(self.short_term)
         }
 
     def build_memory_context(self, user_input: str) -> str:
         """构建记忆上下文"""
         context = self.get_context(user_input)
-
-        parts = []
-
-        # 添加相关记忆
-        if context["relevant_memories"]:
-            parts.append("\n用户相关记忆：")
-            for mem in context["relevant_memories"][:2]:
-                parts.append(f"- {mem['content']}")
-
-        # 添加最近对话
         if context["recent_conversation"]:
-            parts.append(f"\n最近对话：\n{context['recent_conversation']}")
-
-        return "\n".join(parts) if parts else ""
+            return f"\n最近对话：\n{context['recent_conversation']}"
+        return ""
 
 
 class WorkingMemory:
     """工作记忆 - 当前任务状态"""
 
     def __init__(self):
-        self.pending_params: Dict[str, Any] = {}  # 待填充参数
+        self.pending_params: Dict[str, Any] = {}
         self.current_tool: str = None
         self.current_action: str = None
-        self.state: str = "init"  # init, waiting_param, executing, done
+        self.state: str = "init"
 
     def set_tool_call(self, tool: str, action: str, params: Dict):
         """设置工具调用"""

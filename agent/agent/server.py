@@ -8,15 +8,16 @@ from agent.core.agent import AgentCore, ReActAgent
 app = Flask(__name__)
 
 # 初始化 Agent
-USE_REACT = os.getenv("USE_REACT", "false").lower() == "true"
+# USE_REACT = os.getenv("USE_REACT", "false").lower() == "true"
 
-if USE_REACT:
-    agent = ReActAgent()
-    print("使用 ReAct Agent")
-else:
-    agent = AgentCore()
-    print("使用标准 Agent")
-
+# if USE_REACT:
+#     agent = ReActAgent()
+#     print("使用 ReAct Agent")
+# else:
+#     agent = AgentCore()
+#     print("使用标准 Agent")
+agent = ReActAgent()
+print("使用 ReAct Agent")
 
 @app.route('/api/chat', methods=['POST'])
 def chat():
@@ -37,29 +38,12 @@ def chat():
         return jsonify({'success': False, 'message': str(e)}), 500
 
 
-@app.route('/api/memory/search', methods=['POST'])
-def search_memory():
-    """搜索用户记忆"""
-    data = request.json
-    query = data.get('query', '')
-    user_id = data.get('userId', None)
-
-    if not query:
-        return jsonify({'success': False, 'message': '查询不能为空'}), 400
-
-    try:
-        results = agent.memory_manager.search_memory(query)
-        return jsonify({'success': True, 'data': results})
-    except Exception as e:
-        return jsonify({'success': False, 'message': str(e)}), 500
-
-
 @app.route('/api/tools/reload', methods=['POST'])
 def reload_tools():
-    """重新加载工具到向量库"""
+    """重新加载工具"""
     try:
         from agent.rag.tool_rag import init_tool_rag_from_backend
-        agent.tool_rag = init_tool_rag_from_backend(agent.vector_store, agent.backend_url)
+        agent.tool_rag = init_tool_rag_from_backend(agent.backend_url)
         return jsonify({'success': True, 'message': '工具已重新加载'})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500

@@ -8,18 +8,15 @@ from typing import Dict, Optional, Tuple
 from .router import Router, Intent
 from .context_builder import ContextBuilder
 from .tool_executor import SyncToolExecutor
-from ..rag.vector_store import VectorStore
-from ..rag.tool_rag import ToolRAG, init_tool_rag_from_backend
-from ..rag.knowledge_rag import KnowledgeRAG
+from ..rag.tool_rag import init_tool_rag_from_backend
+from ..rag.knowledge_rag import init_knowledge_rag
 from ..memory.memory_manager import MemoryManager, WorkingMemory
 
 
 class AgentCore:
-    """Agent 核心引擎"""
+    """Agent 核心引擎（简化版）"""
 
-    def __init__(self,
-                 backend_url: str = "http://localhost:8080",
-                 vector_store_dir: str = "./vector_store",
+    def __init__(self, backend_url: str = "http://localhost:8080",
                  deepseek_api_key: str = None,
                  deepseek_base_url: str = "https://api.deepseek.com"):
         self.backend_url = backend_url
@@ -27,55 +24,36 @@ class AgentCore:
         self.base_url = deepseek_base_url
 
         # 初始化组件
-        self.vector_store = VectorStore(persist_directory=vector_store_dir)
-        self.tool_rag = init_tool_rag_from_backend(self.vector_store, backend_url)
-        self.knowledge_rag = KnowledgeRAG(self.vector_store)
-        self.memory_manager = MemoryManager(self.vector_store, max_short_term=10)
+        self.tool_rag = init_tool_rag_from_backend(backend_url)
+        self.knowledge_rag = init_knowledge_rag()
+        self.memory_manager = MemoryManager(max_short_term=20)
         self.router = Router(self.api_key, self.base_url)
         self.context_builder = ContextBuilder()
         self.tool_executor = SyncToolExecutor(backend_url)
-        self.tool_executor.register_default_tools()
+        self.tool_executor.load_tools_from_backend()
 
         # 工作记忆
         self.working_memory = WorkingMemory()
 
-        # 初始化知识库
-        self._init_knowledge()
-
-    def _init_knowledge(self):
-        """初始化知识库"""
-        try:
-            self.knowledge_rag.init_default_knowledge()
-            print("知识库初始化完成")
-        except Exception as e:
-            print(f"知识库初始化失败: {e}")
+        print("Agent 初始化完成")
 
     def chat(self, user_input: str, user_id: str = None, session_id: str = None) -> str:
         """
         处理用户对话
-
-        Args:
-            user_input: 用户输入
-            user_id: 用户ID
-            session_id: 会话ID
-
-        Returns:
-            Agent 响应
         """
-        # 设置会话
         self.memory_manager.set_session(session_id or "default", user_id)
 
-        print(f"\n========== DEBUG START ==========")
-        print(f"[INPUT] {user_input}")
+        print(f"\n========== 调试开始 ==========")
+        print(f"【用户输入】 {user_input}")
 
         # 1. 意图识别
         intent, reason = self.router.classify(user_input)
-        print(f"[INTENT] {intent} ({reason})")
+        print(f"【意图识别】 {intent} ({reason})")
 
         # 2. 获取上下文
         context = self._build_context(user_input)
 
-        # 3. 根据意图处理
+        # 3. 处理
         if intent == Intent.CHAT:
             response = self._handle_chat(user_input, context)
         elif intent == Intent.STATISTIC or intent == Intent.QUERY:
@@ -83,8 +61,8 @@ class AgentCore:
         else:
             response = "抱歉，我无法理解您的问题，请尝试重新描述。"
 
-        print(f"[RESPONSE] {response[:200]}...")
-        print(f"========== DEBUG END ==========\n")
+        print(f"【最终响应】 {response[:200]}...")
+        print(f"========== 调试结束 ==========\n")
 
         # 4. 更新记忆
         self.memory_manager.add_turn(user_input, response)
@@ -93,9 +71,8 @@ class AgentCore:
 
     def _build_context(self, user_input: str) -> Dict:
         """构建上下文"""
-        # RAG 检索
-        tools_desc = self.tool_rag.build_tool_description_from_rag(user_input, top_k=5)
-        knowledge = self.knowledge_rag.build_knowledge_context(user_input, top_k=3)
+        tools_desc = self.tool_rag.get_tool_description()
+        knowledge = self.knowledge_rag.build_knowledge_context(user_input)
         memory = self.memory_manager.build_memory_context(user_input)
         history = self.memory_manager.get_recent_context(3)
 
@@ -109,7 +86,6 @@ class AgentCore:
     def _handle_chat(self, user_input: str, context: Dict) -> str:
         """处理闲聊"""
         prompt = self.context_builder.build(user_input, context)
-
         try:
             response = self._call_llm(prompt)
             return response
@@ -118,29 +94,27 @@ class AgentCore:
 
     def _handle_tool_call(self, user_input: str, context: Dict) -> str:
         """处理工具调用"""
-        # 构建工具调用 prompt
         prompt = self.context_builder.build_tool_call_prompt(user_input, context)
-        print(f"[TOOL_CALL_PROMPT]\n{prompt[:300]}...")
+        print(f"【构建 Prompt】\n{prompt[:300]}...")
 
-        # 调用 LLM 获取工具调用
         try:
             llm_response = self._call_llm(prompt)
-            print(f"[LLM_RESPONSE] {llm_response[:200]}...")
+            print(f"【LLM 响应】 {llm_response[:200]}...")
         except Exception as e:
             return f"调用大模型失败：{str(e)}"
 
         # 解析工具调用
         tool_call = self._parse_tool_call(llm_response)
-        print(f"[PARSED_TOOL_CALL] {tool_call}")
+        print(f"【解析工具调用】 {tool_call}")
 
         if not tool_call:
-            # LLM 返回的不是工具调用，当作普通回复
+            print(f"【工具调用】 未匹配到工具")
             return llm_response
 
         # 执行工具
         try:
             tool_result = self.tool_executor.execute([tool_call])
-            print(f"[TOOL_RESULT] {tool_result[:200]}...")
+            print(f"【工具结果】 {tool_result[:200]}...")
         except Exception as e:
             return f"工具执行失败：{str(e)}"
 
@@ -193,7 +167,6 @@ class AgentCore:
                             "params": parsed.get("params", {})
                         }
 
-            # 尝试从整个响应中提取
             start = llm_response.find('{')
             end = llm_response.rfind('}') + 1
             if start != -1 and end > start:
@@ -204,14 +177,14 @@ class AgentCore:
                         "action": parsed["action"],
                         "params": parsed.get("params", {})
                     }
-        except (json.JSONDecodeError, Exception):
+        except:
             pass
 
         return None
 
 
 class ReActAgent(AgentCore):
-    """ReAct 模式的 Agent - 推理 + 行动"""
+    """ReAct 模式的 Agent"""
 
     def _handle_tool_call(self, user_input: str, context: Dict) -> str:
         """ReAct 风格的工具调用"""
@@ -220,8 +193,10 @@ class ReActAgent(AgentCore):
         all_results = []
 
         for i in range(max_iterations):
-            # 构建推理 prompt
             prompt = f"""你是一个智能助手。当前任务：{current_input}
+
+可用工具：
+{context.get("tools", "无")}
 
 历史工具结果：
 {chr(10).join(all_results) if all_results else "无"}
@@ -231,25 +206,22 @@ class ReActAgent(AgentCore):
 2. 还需要什么信息？
 3. 应该调用什么工具？
 
-返回格式（JSON）：
-{{"analysis": "分析", "tool": "工具名或null", "action": "action名或null", "params": {{}}或null}}
+返回格式（JSON），直接返回JSON，不要包含其他文字：
+{{"analysis": "你的分析", "tool": "OrderTool/UserTool/InventoryTool之一，或null", "action": "具体action名称，或null", "params": {{"参数名": "参数值"}}或null}}
 
-如果已有足够信息回答用户问题，analysis 中说明最终答案，tool 设为 null。
+如果已有足够信息回答用户问题，analysis 中说明最终答案，tool 设为 null，action 设为 null。
 """
 
             try:
                 llm_response = self._call_llm(prompt, temperature=0.3)
-                print(f"[REACT_ITER_{i+1}] {llm_response[:200]}...")
+                print(f"【ReAct推理迭代 {i+1}】 {llm_response[:200]}...")
             except Exception as e:
                 return f"推理失败：{str(e)}"
 
-            # 解析响应
             parsed = self._parse_react_response(llm_response)
             if not parsed or not parsed.get("tool"):
-                # 已有足够信息
                 return parsed.get("analysis", llm_response) if parsed else llm_response
 
-            # 执行工具
             tool_call = {
                 "tool": parsed["tool"],
                 "action": parsed["action"],
@@ -258,8 +230,15 @@ class ReActAgent(AgentCore):
 
             try:
                 result = self.tool_executor.execute([tool_call])
-                all_results.append(f"[{parsed['tool']}.{parsed['action']}] {result}")
-                current_input = f"基于之前的工具结果，继续完成：{user_input}"
+                print(f"【工具结果】 {result[:500]}...")
+
+                # LLM 润色结果
+                response_prompt = self.context_builder.build_response_prompt(
+                    user_input, result, context
+                )
+                print(f"【润色 Prompt】\n{response_prompt[:300]}...")
+                polished = self._call_llm(response_prompt)
+                return polished
             except Exception as e:
                 return f"工具执行失败：{str(e)}"
 
@@ -268,10 +247,14 @@ class ReActAgent(AgentCore):
     def _parse_react_response(self, response: str) -> Optional[Dict]:
         """解析 ReAct 响应"""
         try:
-            for line in response.split('\n'):
-                line = line.strip()
-                if line.startswith('{') and line.endswith('}'):
-                    return json.loads(line)
+            # 尝试找 JSON 对象（支持跨行）
+            start = response.find('{')
+            end = response.rfind('}')
+            if start != -1 and end > start:
+                json_str = response[start:end+1]
+                parsed = json.loads(json_str)
+                if "tool" in parsed and "action" in parsed:
+                    return parsed
         except:
             pass
         return None

@@ -2,7 +2,7 @@
 Context Builder - 上下文构建器
 构建 LLM 所需的完整 prompt
 """
-from typing import Dict, List, Optional
+from typing import Dict
 
 
 class ContextBuilder:

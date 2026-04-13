@@ -1,7 +1,7 @@
 from .agent import AgentCore, ReActAgent
 from .router import Router, Intent
 from .context_builder import ContextBuilder
-from .tool_executor import ToolExecutor, SyncToolExecutor
+from .tool_executor import SyncToolExecutor
 
 __all__ = [
     'AgentCore',
@@ -9,6 +9,5 @@ __all__ = [
     'Router',
     'Intent',
     'ContextBuilder',
-    'ToolExecutor',
     'SyncToolExecutor'
 ]
