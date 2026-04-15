@@ -1,5 +1,8 @@
 from langchain_core.tools import tool
 import requests
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def create_user_tools(base_url: str):
@@ -15,6 +18,7 @@ def create_user_tools(base_url: str):
         Returns:
             用户信息JSON字符串
         """
+        logger.info(f"【工具调用】query_user_info | 参数: userId={userId}")
         resp = requests.post(
             f"{base_url}/tools/user/query",
             json={"action": "query_user_info", "params": {"userId": userId}},
@@ -22,7 +26,9 @@ def create_user_tools(base_url: str):
         )
         result = resp.json()
         if not result.get("success"):
+            logger.error(f"【工具调用】query_user_info | 失败: {result.get('message', '未知错误')}")
             return f"查询失败：{result.get('message', '未知错误')}"
+        logger.info(f"【工具调用】query_user_info | 成功")
         return str(result.get("data", {}))
 
     return [query_user_info]

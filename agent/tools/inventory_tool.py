@@ -1,5 +1,8 @@
 from langchain_core.tools import tool
 import requests
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def create_inventory_tools(base_url: str):
@@ -15,6 +18,7 @@ def create_inventory_tools(base_url: str):
         Returns:
             库存信息JSON字符串
         """
+        logger.info(f"【工具调用】query_inventory | 参数: sku={sku}")
         resp = requests.post(
             f"{base_url}/tools/inventory/query",
             json={"action": "query_inventory", "params": {"sku": sku}},
@@ -22,7 +26,9 @@ def create_inventory_tools(base_url: str):
         )
         result = resp.json()
         if not result.get("success"):
+            logger.error(f"【工具调用】query_inventory | 失败: {result.get('message', '未知错误')}")
             return f"查询失败：{result.get('message', '未知错误')}"
+        logger.info(f"【工具调用】query_inventory | 成功")
         return str(result.get("data", []))
 
     @tool
@@ -35,6 +41,7 @@ def create_inventory_tools(base_url: str):
         Returns:
             仓库库存列表JSON字符串
         """
+        logger.info(f"【工具调用】query_warehouse_stock | 参数: warehouse={warehouse}")
         resp = requests.post(
             f"{base_url}/tools/inventory/query",
             json={"action": "query_warehouse_stock", "params": {"warehouse": warehouse}},
@@ -42,7 +49,9 @@ def create_inventory_tools(base_url: str):
         )
         result = resp.json()
         if not result.get("success"):
+            logger.error(f"【工具调用】query_warehouse_stock | 失败: {result.get('message', '未知错误')}")
             return f"查询失败：{result.get('message', '未知错误')}"
+        logger.info(f"【工具调用】query_warehouse_stock | 成功")
         return str(result.get("data", []))
 
     return [query_inventory, query_warehouse_stock]

@@ -1,6 +1,9 @@
 from langchain_core.tools import tool
 from typing import Optional
 import requests
+import logging
+
+logger = logging.getLogger(__name__)
 
 
 def create_order_tools(base_url: str):
@@ -28,6 +31,7 @@ def create_order_tools(base_url: str):
         Returns:
             订单列表JSON字符串
         """
+        logger.info(f"【工具调用】query_order_list | 参数: userId={userId}, status={status}")
         params = {"userId": userId}
         if status:
             params["status"] = status
@@ -40,6 +44,7 @@ def create_order_tools(base_url: str):
         if endDate:
             params["endDate"] = endDate
 
+        logger.info(f"【工具调用】query_order_list | 请求后端: {base_url}/tools/order/query")
         resp = requests.post(
             f"{base_url}/tools/order/query",
             json={"action": "query_order_list", "params": params},
@@ -47,7 +52,9 @@ def create_order_tools(base_url: str):
         )
         result = resp.json()
         if not result.get("success"):
+            logger.error(f"【工具调用】query_order_list | 失败: {result.get('message', '未知错误')}")
             return f"查询失败：{result.get('message', '未知错误')}"
+        logger.info(f"【工具调用】query_order_list | 成功，返回 {len(result.get('data', []))} 条记录")
         return str(result.get("data", []))
 
     @tool
@@ -60,6 +67,7 @@ def create_order_tools(base_url: str):
         Returns:
             订单详情JSON字符串
         """
+        logger.info(f"【工具调用】query_order_detail | 参数: orderNo={orderNo}")
         resp = requests.post(
             f"{base_url}/tools/order/query",
             json={"action": "query_order_detail", "params": {"orderNo": orderNo}},
@@ -67,7 +75,9 @@ def create_order_tools(base_url: str):
         )
         result = resp.json()
         if not result.get("success"):
+            logger.error(f"【工具调用】query_order_detail | 失败: {result.get('message', '未知错误')}")
             return f"查询失败：{result.get('message', '未知错误')}"
+        logger.info(f"【工具调用】query_order_detail | 成功")
         return str(result.get("data", {}))
 
     @tool
@@ -86,6 +96,7 @@ def create_order_tools(base_url: str):
         Returns:
             订单统计信息（数量、总金额、平均金额）
         """
+        logger.info(f"【工具调用】query_order_statistics | 参数: userId={userId}")
         params = {"userId": userId}
         if minAmount is not None:
             params["minAmount"] = minAmount
@@ -99,7 +110,9 @@ def create_order_tools(base_url: str):
         )
         result = resp.json()
         if not result.get("success"):
+            logger.error(f"【工具调用】query_order_statistics | 失败: {result.get('message', '未知错误')}")
             return f"查询失败：{result.get('message', '未知错误')}"
+        logger.info(f"【工具调用】query_order_statistics | 成功: {result.get('data', {})}")
         return str(result.get("data", {}))
 
     return [query_order_list, query_order_detail, query_order_statistics]

@@ -26,12 +26,12 @@ def chat():
         return jsonify({'success': False, 'message': '消息不能为空'}), 400
 
     try:
-        logger.info(f"收到请求: userId={user_id}, message={message[:50]}...")
+        logger.info(f"【收到请求】用户ID: {user_id}, 消息: {message[:100]}")
         response = orchestrator.process(message, user_id=user_id)
-        logger.info(f"返回响应: {str(response)[:50]}...")
+        logger.info(f"【返回响应】类型: {type(response).__name__}, 内容: {str(response)[:100]}")
         return jsonify({'success': True, 'response': response})
     except Exception as e:
-        logger.error(f"处理失败: {e}")
+        logger.error(f"【处理失败】错误: {str(e)}")
         import traceback
         traceback.print_exc()
         return jsonify({'success': False, 'message': str(e)}), 500
