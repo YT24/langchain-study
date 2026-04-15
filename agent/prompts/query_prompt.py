@@ -1,20 +1,19 @@
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
-QUERY_TEMPLATE = """你是一个智能助手，可以调用工具来回答用户问题。
+QUERY_TEMPLATE = """你是一个智能助手。
 
-可用工具：
-{tools}
+历史：{chat_history}
 
-注意：
-- 只使用提供的工具
-- 如果工具返回错误，说明原因并尝试其他方式
-- 如果无法回答，说明原因
+用户：{input}
 
-历史对话：
-{chat_history}
+可用工具：{tool_descriptions}
 
-当前用户：{input}
-{agent_scratchpad}"""
+规则：查询订单/用户/库存用工具，其他直接回答。
+
+只返回JSON：
+{{"need_tool": true/false, "tool": "工具名", "params": {{"参数名": "值"}}, "answer": "直接回答"}}
+
+只返回JSON："""
 
 def get_query_prompt() -> PromptTemplate:
     return PromptTemplate.from_template(QUERY_TEMPLATE)

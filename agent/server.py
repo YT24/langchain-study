@@ -1,6 +1,7 @@
-import os
 import logging
+
 from flask import Flask, request, jsonify
+
 from dependencies import initialize_dependencies
 
 # 配置日志
@@ -41,9 +42,22 @@ def chat():
 def reload_tools():
     """重新加载工具"""
     try:
-        # TODO: 实现工具热加载
-        return jsonify({'success': True, 'message': '工具已重新加载'})
+        from config import get_settings
+        from tools import reload_tools as reload_tools_func
+
+        settings = get_settings()
+        new_tools = reload_tools_func(settings.backend_url)
+
+        # 更新 orchestrator 的工具
+        orchestrator.set_tools(new_tools)
+
+        return jsonify({
+            'success': True,
+            'message': f'工具已重新加载，共 {len(new_tools)} 个'
+        })
     except Exception as e:
+        import traceback
+        traceback.print_exc()
         return jsonify({'success': False, 'message': str(e)}), 500
 
 

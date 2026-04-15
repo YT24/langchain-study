@@ -1,4 +1,4 @@
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 INTENT_TEMPLATE = """你是一个意图分类器。用户输入后，判断用户的意图：
 

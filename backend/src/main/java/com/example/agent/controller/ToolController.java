@@ -1,5 +1,6 @@
 package com.example.agent.controller;
 
+import com.example.agent.dto.ToolDefinition;
 import com.example.agent.dto.ToolRequest;
 import com.example.agent.entity.SysTool;
 import com.example.agent.model.ApiResponse;
@@ -35,6 +36,11 @@ public class ToolController {
     @GetMapping
     public ApiResponse<List<SysTool>> getAllTools() {
         return ApiResponse.success(toolService.getAllEnabledTools());
+    }
+
+    @GetMapping("/actions")
+    public ApiResponse<List<ToolDefinition>> getAllToolActions() {
+        return ApiResponse.success(toolService.getAllToolDefinitions());
     }
 
     @PostMapping

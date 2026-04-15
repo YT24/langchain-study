@@ -1,4 +1,4 @@
-from langchain.prompts import PromptTemplate
+from langchain_core.prompts import PromptTemplate
 
 CHAT_TEMPLATE = """你是一个小助手，友善地回答用户问题。
 
