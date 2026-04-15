@@ -1,10 +1,5 @@
 import React, { useState, useEffect, useRef } from 'react'
-import axios from 'axios'
-
-const api = axios.create({
-  baseURL: '/api',
-  timeout: 30000
-})
+import { getTools, enableTool, disableTool } from '../services/api'
 
 export default function ToolManagement() {
   const [tools, setTools] = useState([])
@@ -22,9 +17,9 @@ export default function ToolManagement() {
     setLoading(true)
     setError('')
     try {
-      const response = await api.get('/tools')
-      if (response.data.success) {
-        setTools(response.data.data || [])
+      const response = await getTools()
+      if (response.success) {
+        setTools(response.data || [])
       } else {
         setError('加载失败')
       }
@@ -37,8 +32,11 @@ export default function ToolManagement() {
 
   const toggleEnabled = async (tool) => {
     try {
-      const action = tool.enabled ? 'disable' : 'enable'
-      await api.post(`/tools/${tool.id}/${action}`)
+      if (tool.status === 1) {
+        await disableTool(tool.id)
+      } else {
+        await enableTool(tool.id)
+      }
       fetchTools()
     } catch (e) {
       alert('操作失败')
@@ -75,7 +73,7 @@ export default function ToolManagement() {
               <th>ID</th>
               <th>名称</th>
               <th>描述</th>
-              <th>操作</th>
+              <th>版本</th>
               <th>状态</th>
               <th>操作</th>
             </tr>
@@ -86,22 +84,22 @@ export default function ToolManagement() {
                 <td>
                   <span className="tool-id">{tool.id}</span>
                 </td>
-                <td className="tool-name">{tool.name}</td>
+                <td className="tool-name">{tool.displayName || tool.name}</td>
                 <td className="tool-description">{tool.description}</td>
                 <td>
-                  <span className="tool-action">{tool.actions || '-'}</span>
+                  <span className="tool-action">{tool.version || '1.0'}</span>
                 </td>
                 <td>
-                  <span className={`tool-status ${tool.enabled ? 'enabled' : 'disabled'}`}>
-                    {tool.enabled ? '已启用' : '已禁用'}
+                  <span className={`tool-status ${tool.status === 1 ? 'enabled' : 'disabled'}`}>
+                    {tool.status === 1 ? '已启用' : '已禁用'}
                   </span>
                 </td>
                 <td>
                   <button
-                    className={`toggle-button ${tool.enabled ? 'disable' : 'enable'}`}
+                    className={`toggle-button ${tool.status === 1 ? 'disable' : 'enable'}`}
                     onClick={() => toggleEnabled(tool)}
                   >
-                    {tool.enabled ? '禁用' : '启用'}
+                    {tool.status === 1 ? '禁用' : '启用'}
                   </button>
                 </td>
               </tr>

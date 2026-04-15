@@ -40,11 +40,13 @@ def chat():
 
 @app.route('/api/tools/reload', methods=['POST'])
 def reload_tools():
-    """重新加载工具"""
+    """重新加载工具描述和工具状态"""
     try:
         from agent.rag.tool_rag import init_tool_rag_from_backend
         agent.tool_rag = init_tool_rag_from_backend(agent.backend_url)
-        return jsonify({'success': True, 'message': '工具已重新加载'})
+        agent.tool_executor.reload()
+        enabled = list(agent.tool_executor.tools.keys())
+        return jsonify({'success': True, 'message': '工具已重新加载', 'enabled_tools': enabled})
     except Exception as e:
         return jsonify({'success': False, 'message': str(e)}), 500
 
@@ -54,7 +56,7 @@ def health():
     """健康检查"""
     return jsonify({
         'status': 'ok',
-        'agent_type': 'ReAct' if USE_REACT else 'Standard',
+        'agent_type': 'ReAct',
         'session_count': len(agent.memory_manager.short_term) if hasattr(agent.memory_manager, 'short_term') else 0
     })
 

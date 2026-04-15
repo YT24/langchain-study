@@ -1,0 +1,1 @@
+INSERT IGNORE INTO sys_tool_action (tool_id, name, display_name, description, base_url, http_method, endpoint, request_params, sort_order) VALUES (2, 'query_user_info', 'Query User Info', 'Query user information by user ID', 'http://localhost:8080', 'POST', '/tools/user/query', '{"userId": {"type": "string", "required": true, "description": "User ID"}}', 1);

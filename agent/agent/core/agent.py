@@ -192,6 +192,8 @@ class ReActAgent(AgentCore):
         current_input = user_input
         all_results = []
 
+        available_tool_names = "/".join(self.tool_executor.tools.keys()) or "无"
+
         for i in range(max_iterations):
             prompt = f"""你是一个智能助手。当前任务：{current_input}
 
@@ -207,7 +209,7 @@ class ReActAgent(AgentCore):
 3. 应该调用什么工具？
 
 返回格式（JSON），直接返回JSON，不要包含其他文字：
-{{"analysis": "你的分析", "tool": "OrderTool/UserTool/InventoryTool之一，或null", "action": "具体action名称，或null", "params": {{"参数名": "参数值"}}或null}}
+{{"analysis": "你的分析", "tool": "{available_tool_names}之一，或null", "action": "具体action名称，或null", "params": {{"参数名": "参数值"}}或null}}
 
 如果已有足够信息回答用户问题，analysis 中说明最终答案，tool 设为 null，action 设为 null。
 """

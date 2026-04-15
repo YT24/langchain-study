@@ -1,7 +1,7 @@
 package com.example.agent.controller;
 
 import com.example.agent.dto.ToolRequest;
-import com.example.agent.entity.Tool;
+import com.example.agent.entity.SysTool;
 import com.example.agent.model.ApiResponse;
 import com.example.agent.model.Order;
 import com.example.agent.model.OrderStatistics;
@@ -32,48 +32,41 @@ public class ToolController {
 
     private final ObjectMapper objectMapper = new ObjectMapper();
 
-    // 获取所有启用的工具
     @GetMapping
-    public ApiResponse<List<Tool>> getAllTools() {
+    public ApiResponse<List<SysTool>> getAllTools() {
         return ApiResponse.success(toolService.getAllEnabledTools());
     }
 
-    // 添加工具
     @PostMapping
-    public ApiResponse<Tool> createTool(@RequestBody Tool tool) {
-        Tool created = toolService.createTool(tool);
+    public ApiResponse<SysTool> createTool(@RequestBody SysTool tool) {
+        SysTool created = toolService.createTool(tool);
         return ApiResponse.success(created);
     }
 
-    // 更新工具
     @PutMapping("/{id}")
-    public ApiResponse<Tool> updateTool(@PathVariable Long id, @RequestBody Tool tool) {
-        Tool updated = toolService.updateTool(id, tool);
+    public ApiResponse<SysTool> updateTool(@PathVariable Long id, @RequestBody SysTool tool) {
+        SysTool updated = toolService.updateTool(id, tool);
         return ApiResponse.success(updated);
     }
 
-    // 删除工具
     @DeleteMapping("/{id}")
     public ApiResponse<?> deleteTool(@PathVariable Long id) {
         toolService.deleteTool(id);
         return ApiResponse.success(null);
     }
 
-    // 启用工具
     @PostMapping("/{id}/enable")
-    public ApiResponse<Tool> enableTool(@PathVariable Long id) {
-        Tool tool = toolService.enableTool(id);
+    public ApiResponse<SysTool> enableTool(@PathVariable Long id) {
+        SysTool tool = toolService.enableTool(id);
         return ApiResponse.success(tool);
     }
 
-    // 禁用工具
     @PostMapping("/{id}/disable")
-    public ApiResponse<Tool> disableTool(@PathVariable Long id) {
-        Tool tool = toolService.disableTool(id);
+    public ApiResponse<SysTool> disableTool(@PathVariable Long id) {
+        SysTool tool = toolService.disableTool(id);
         return ApiResponse.success(tool);
     }
 
-    // 记录工具调用日志
     @PostMapping("/log")
     public ApiResponse<?> logToolCall(@RequestBody LogRequest request) {
         toolService.logCall(
@@ -103,18 +96,15 @@ public class ToolController {
                 String startDate = null;
                 String endDate = null;
 
-                // 检查是否有金额范围参数
                 amountObj = params.get("minAmount");
                 if (amountObj != null) minAmount = new BigDecimal(amountObj.toString());
 
                 amountObj = params.get("maxAmount");
                 if (amountObj != null) maxAmount = new BigDecimal(amountObj.toString());
 
-                // 检查是否有日期范围参数
                 startDate = (String) params.get("startDate");
                 endDate = (String) params.get("endDate");
 
-                // 优先使用多条件查询
                 if ((minAmount != null || maxAmount != null || startDate != null || endDate != null) && status != null) {
                     result = orderService.queryByConditions(userId, status, minAmount, maxAmount, startDate, endDate);
                 } else if (minAmount != null || maxAmount != null) {
@@ -222,7 +212,6 @@ public class ToolController {
         }
     }
 
-    // 日志请求 DTO
     @lombok.Data
     public static class LogRequest {
         private String toolName;

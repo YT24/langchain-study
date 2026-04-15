@@ -1,0 +1,1 @@
+INSERT IGNORE INTO sys_tool_action (tool_id, name, display_name, description, base_url, http_method, endpoint, request_params, sort_order) VALUES (3, 'query_warehouse_stock', 'Query Warehouse Stock', 'Query inventory by warehouse', 'http://localhost:8080', 'POST', '/tools/inventory/query', '{"warehouse": {"type": "string", "required": true, "description": "Warehouse name"}}', 2);

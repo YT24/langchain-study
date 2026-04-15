@@ -1,0 +1,9 @@
+CREATE TABLE IF NOT EXISTS inventory (
+    id BIGINT AUTO_INCREMENT PRIMARY KEY,
+    sku VARCHAR(32) NOT NULL COMMENT '商品SKU',
+    warehouse VARCHAR(32) NOT NULL COMMENT '仓库',
+    quantity INT NOT NULL DEFAULT 0 COMMENT '库存数量',
+    updated_at DATETIME DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP COMMENT '更新时间',
+    UNIQUE KEY uk_sku_warehouse (sku, warehouse),
+    INDEX idx_sku (sku)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COMMENT='库存表';
