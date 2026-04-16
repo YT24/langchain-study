@@ -343,14 +343,14 @@ class AgentOrchestrator:
 
             if intent_type in ("query", "statistic"):
                 logger.info("【路由】进入查询/统计处理流程")
-                logger.info(f"【历史记录】{self.memory_manager.get_history()[:200]}")
+                logger.info(f"【历史记录】{self.memory_manager.get_history(user_id)[:200]}")
 
                 # RAG 增强（使用缓存避免重复 embedding）
                 rag_context = self._get_rag_context(user_input)
 
                 raw_response = self.query_chain.invoke({
                     "input": user_input,
-                    "chat_history": self.memory_manager.get_history(),
+                    "chat_history": self.memory_manager.get_history(user_id),
                     "rag_context": rag_context
                 })
                 logger.info(f"【查询链返回】原始响应: {str(raw_response)[:300]}")
@@ -382,7 +382,7 @@ class AgentOrchestrator:
                 logger.info("【路由】进入闲聊处理流程")
                 response = self.chat_chain.invoke({
                     "input": user_input,
-                    "chat_history": self.memory_manager.get_history()
+                    "chat_history": self.memory_manager.get_history(user_id)
                 })
                 logger.info(f"【闲聊链返回】类型: {type(response).__name__}, 内容: {str(response)[:200]}")
                 if isinstance(response, dict):
@@ -393,8 +393,8 @@ class AgentOrchestrator:
 
             # 3. 更新记忆
             logger.info("【步骤3】更新对话记忆")
-            self.memory_manager.add_user_message(user_input)
-            self.memory_manager.add_ai_message(str(response))
+            self.memory_manager.add_user_message(user_input, user_id)
+            self.memory_manager.add_ai_message(str(response), user_id)
             logger.info(f"【最终响应】{str(response)[:100]}")
 
             return str(response)

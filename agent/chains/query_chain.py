@@ -2,13 +2,12 @@ from langchain_core.tools import Tool
 from typing import List
 
 
-def create_query_chain(llm, tools: List[Tool], memory, tool_rag=None, knowledge_rag=None):
+def create_query_chain(llm, tools: List[Tool], tool_rag=None, knowledge_rag=None):
     """创建查询链 - 使用 LCEL + RAG 增强
 
     Args:
         llm: 语言模型
         tools: 可用工具列表
-        memory: 对话记忆
         tool_rag: 工具向量检索（可选）
         knowledge_rag: 知识向量检索（可选）
     """

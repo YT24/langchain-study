@@ -73,7 +73,7 @@ def initialize_dependencies():
     print(f"[初始化] intent_chain: {time.time()-t4:.2f}s (累计: {time.time()-t0:.2f}s)")
 
     t5 = time.time()
-    query_chain = create_query_chain(llm, tools, memory_manager.memory, tool_rag, knowledge_rag)
+    query_chain = create_query_chain(llm, tools, tool_rag, knowledge_rag)
     print(f"[初始化] query_chain: {time.time()-t5:.2f}s (累计: {time.time()-t0:.2f}s)")
 
     t6 = time.time()
