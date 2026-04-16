@@ -211,7 +211,7 @@ export default function ToolManagement() {
         })
       }
       setShowActionModal(false)
-      const toolId = editingAction ? editingTool.id : editingToolForAction.id
+      const toolId = editingAction ? editingAction.toolId : editingToolForAction.id
       const res = await getToolActions(toolId)
       if (res.success) {
         setExpandedActions(prev => ({ ...prev, [toolId]: res.data || [] }))
