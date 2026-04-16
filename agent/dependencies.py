@@ -1,5 +1,5 @@
 import time
-from config import get_settings
+from settings import get_settings
 from chains.intent_chain import create_intent_chain
 from chains.query_chain import create_query_chain
 from chains.chat_chain import create_chat_chain
@@ -18,7 +18,7 @@ def create_chat_model():
         model=settings.deepseek_model,
         api_key=settings.deepseek_api_key,
         base_url=f"{settings.deepseek_base_url}/v1",
-        temperature=0.7
+        temperature=settings.deepseek_temperature
     )
 
 

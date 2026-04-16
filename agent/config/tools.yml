@@ -1,0 +1,13 @@
+# 工具配置
+
+# HTTP 请求配置
+http:
+  timeout: 30
+  max_retries: 3
+
+# 工具加载配置
+loading:
+  # 后端 API 端点
+  api_endpoint: "/tools/actions"
+  # 验证工具可用性
+  validate_on_load: true

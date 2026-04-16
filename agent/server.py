@@ -5,7 +5,17 @@ from flask import Flask, request, jsonify
 from dependencies import initialize_dependencies
 
 # 配置日志
-logging.basicConfig(level=logging.INFO)
+logging.basicConfig(
+    level=logging.INFO,
+    format='%(asctime)s [%(levelname)s] %(filename)s:%(lineno)d - %(message)s',
+    datefmt='%H:%M:%S'
+)
+
+# 抑制第三方库的噪音日志
+logging.getLogger("httpx").setLevel(logging.WARNING)
+logging.getLogger("huggingface_hub").setLevel(logging.WARNING)
+logging.getLogger("sentence_transformers").setLevel(logging.WARNING)
+
 logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
@@ -42,7 +52,7 @@ def chat():
 def reload_tools():
     """重新加载工具"""
     try:
-        from config import get_settings
+        from settings import get_settings
         from tools import reload_tools as reload_tools_func
 
         settings = get_settings()

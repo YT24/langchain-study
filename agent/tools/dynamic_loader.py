@@ -94,6 +94,10 @@ class DynamicToolLoader:
 
         base_url = self.base_url
 
+        # 获取 HTTP 超时配置
+        from settings import get_settings
+        http_timeout = get_settings().http_timeout
+
         # 构建参数字典字符串
         param_dict_str = "{" + ", ".join(f"'{pn}': {pn}" for pn in param_names) + "}"
 
@@ -112,23 +116,23 @@ def {safe_name}({', '.join(param_with_defaults)}) -> str:
 
     try:
         if '{http_method}'.upper() == 'POST':
-            resp = requests.post(url, json=payload, timeout=30)
+            resp = requests.post(url, json=payload, timeout={http_timeout})
         else:
-            resp = requests.get(url, params=payload, timeout=30)
+            resp = requests.get(url, params=payload, timeout={http_timeout})
 
         resp.raise_for_status()
         result = resp.json()
 
         if result.get('success'):
             data = result.get('data', [])
-            logger.info('【动态工具调用】' + '{name}' + ' 成功')
+            logger.info(f'【动态工具调用】{name} 成功 | 返回数据: {{str(data)[:200]}}')
             return json.dumps(data, ensure_ascii=False)
         else:
             msg = result.get('message', '未知错误')
-            logger.error('【动态工具调用】' + '{name}' + ' 失败: ' + msg)
+            logger.error(f'【动态工具调用】{name} 失败 | 错误信息: {{msg}}')
             return '查询失败：' + msg
     except Exception as e:
-        logger.error('【动态工具调用】' + '{name}' + ' 异常: ' + str(e))
+        logger.error(f'【动态工具调用】{name} 异常: {{str(e)}}')
         return '调用失败: ' + str(e)
 """
         # 执行函数定义

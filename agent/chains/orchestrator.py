@@ -113,7 +113,7 @@ class AgentOrchestrator:
 
     def _get_rag_context(self, query: str) -> str:
         """获取 RAG 上下文（相关工具 + 业务知识）"""
-        from config import get_settings
+        from settings import get_settings
         settings = get_settings()
 
         context_parts = []
