@@ -6,6 +6,7 @@ from chains.chat_chain import create_chat_chain
 from chains.orchestrator import AgentOrchestrator
 from memory.conversation_memory import ConversationMemoryManager
 from tools import create_all_tools
+from rag import get_embedding_model, ToolRAG, KnowledgeRAG
 
 
 def create_chat_model():
@@ -27,31 +28,59 @@ def initialize_dependencies():
     settings = get_settings()
     print(f"[初始化] config 加载: {time.time()-t0:.2f}s")
 
+    # 1. LLM
     t1 = time.time()
     llm = create_chat_model()
     print(f"[初始化] LLM 创建: {time.time()-t1:.2f}s (累计: {time.time()-t0:.2f}s)")
 
+    # 2. Memory
     t2 = time.time()
     memory_manager = ConversationMemoryManager(max_token_limit=settings.max_token_limit)
     print(f"[初始化] Memory: {time.time()-t2:.2f}s (累计: {time.time()-t0:.2f}s)")
 
+    # 3. Tools
     t3 = time.time()
     tools = create_all_tools(settings.backend_url)
     print(f"[初始化] Tools: {time.time()-t3:.2f}s (累计: {time.time()-t0:.2f}s)")
     print(f"[初始化] 加载了 {len(tools)} 个工具: {[t.name for t in tools]}")
 
+    # 4. RAG - Embedding 模型
+    t_rag0 = time.time()
+    embedding_manager = get_embedding_model()
+    print(f"[初始化] Embedding: {time.time()-t_rag0:.2f}s (累计: {time.time()-t0:.2f}s)")
+
+    # 5. RAG - Tool向量检索
+    t_rag1 = time.time()
+    tool_rag = ToolRAG(
+        embedding_manager=embedding_manager,
+        persist_directory=settings.chroma_persist_directory
+    )
+    tool_rag.load_tools(tools)
+    print(f"[初始化] ToolRAG: {time.time()-t_rag1:.2f}s (累计: {time.time()-t0:.2f}s)")
+
+    # 6. RAG - Knowledge向量检索
+    t_rag2 = time.time()
+    knowledge_rag = KnowledgeRAG(
+        embedding_manager=embedding_manager,
+        persist_directory=settings.chroma_persist_directory
+    )
+    knowledge_rag.load_knowledge()
+    print(f"[初始化] KnowledgeRAG: {time.time()-t_rag2:.2f}s (累计: {time.time()-t0:.2f}s)")
+
+    # 7. Chains
     t4 = time.time()
     intent_chain = create_intent_chain(llm)
     print(f"[初始化] intent_chain: {time.time()-t4:.2f}s (累计: {time.time()-t0:.2f}s)")
 
     t5 = time.time()
-    query_chain = create_query_chain(llm, tools, memory_manager.memory)
+    query_chain = create_query_chain(llm, tools, memory_manager.memory, tool_rag, knowledge_rag)
     print(f"[初始化] query_chain: {time.time()-t5:.2f}s (累计: {time.time()-t0:.2f}s)")
 
     t6 = time.time()
     chat_chain = create_chat_chain(llm)
     print(f"[初始化] chat_chain: {time.time()-t6:.2f}s (累计: {time.time()-t0:.2f}s)")
 
+    # 8. Orchestrator
     t7 = time.time()
     orchestrator = AgentOrchestrator(
         intent_chain=intent_chain,
@@ -61,6 +90,13 @@ def initialize_dependencies():
         llm=llm
     )
     orchestrator.set_tools(tools)
+    orchestrator.set_tool_rag(tool_rag)
+    orchestrator.set_knowledge_rag(knowledge_rag)
     print(f"[初始化] Orchestrator: {time.time()-t7:.2f}s (累计: {time.time()-t0:.2f}s)")
+
+    print(f"\n【初始化完成】总耗时: {time.time()-t0:.2f}s")
+    print(f"  - 工具数: {len(tools)}")
+    print(f"  - Embedding模型: {settings.embedding_model}")
+    print(f"  - ChromaDB路径: {settings.chroma_persist_directory}")
 
     return orchestrator

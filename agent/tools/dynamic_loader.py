@@ -14,6 +14,22 @@ class DynamicToolLoader:
     def __init__(self, base_url: str):
         self.base_url = base_url.rstrip('/')
 
+    @staticmethod
+    def _to_python_identifier(name: str) -> str:
+        """将任意字符串转换为有效的 Python 标识符
+
+        test-auth -> test_auth
+        TestAuth -> test_auth
+        123abc -> _123abc
+        """
+        import re
+        # 替换非字母数字下划线字符为下划线
+        s1 = re.sub(r'[^a-zA-Z0-9_]', '_', name)
+        # 如果以数字开头，加前缀
+        if s1[0].isdigit():
+            s1 = '_' + s1
+        return s1
+
     def fetch_tool_definitions(self) -> List[Dict[str, Any]]:
         """从后端获取所有工具定义"""
         try:
@@ -55,6 +71,9 @@ class DynamicToolLoader:
             logger.warning(f"【动态加载】跳过无效工具定义: {defn}")
             return None
 
+        # 将工具名转换为有效的 Python 标识符
+        safe_name = self._to_python_identifier(name)
+
         # 提取参数名列表
         param_names = [p.get("name") for p in params if p.get("name")]
         logger.info(f"【调试】提取的 param_names: {param_names}")
@@ -80,7 +99,7 @@ class DynamicToolLoader:
 
         # 动态创建函数（参数带默认值）
         func_code = f"""
-def {name}({', '.join(param_with_defaults)}) -> str:
+def {safe_name}({', '.join(param_with_defaults)}) -> str:
     '''{description}'''
     action = '{name}'
     req_params = {param_dict_str}
@@ -115,7 +134,7 @@ def {name}({', '.join(param_with_defaults)}) -> str:
         # 执行函数定义
         local_ns = {'requests': requests, 'json': json, 'logger': logger}
         exec(func_code, local_ns)
-        func = local_ns[name]
+        func = local_ns[safe_name]
 
         # 使用 from_function 创建工具
         tool = StructuredTool.from_function(

@@ -51,6 +51,11 @@ def reload_tools():
         # 更新 orchestrator 的工具
         orchestrator.set_tools(new_tools)
 
+        # 重新索引 ToolRAG
+        if hasattr(orchestrator, '_tool_rag') and orchestrator._tool_rag:
+            orchestrator._tool_rag.reload(new_tools)
+            logger.info(f"【ToolRAG】已重新索引 {len(new_tools)} 个工具")
+
         return jsonify({
             'success': True,
             'message': f'工具已重新加载，共 {len(new_tools)} 个'

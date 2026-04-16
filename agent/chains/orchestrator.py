@@ -23,6 +23,8 @@ class AgentOrchestrator:
         self.memory_manager = memory_manager
         self.llm = llm
         self._tools_map = {}  # 工具名到工具对象的映射
+        self._tool_rag = None
+        self._knowledge_rag = None
 
     def set_tools(self, tools):
         """设置可用工具（由 dependencies.py 调用）"""
@@ -30,6 +32,16 @@ class AgentOrchestrator:
         logger.info(f"【工具注册】已注册 {len(self._tools_map)} 个工具: {list(self._tools_map.keys())}")
         for name, tool in self._tools_map.items():
             logger.info(f"【工具注册】  - {name}: {tool.description[:50] if hasattr(tool, 'description') else 'N/A'}...")
+
+    def set_tool_rag(self, tool_rag):
+        """设置工具 RAG"""
+        self._tool_rag = tool_rag
+        logger.info("【ToolRAG】已设置")
+
+    def set_knowledge_rag(self, knowledge_rag):
+        """设置知识 RAG"""
+        self._knowledge_rag = knowledge_rag
+        logger.info("【KnowledgeRAG】已设置")
 
     def _parse_llm_json(self, text: str) -> Optional[dict]:
         """解析 LLM 返回的 JSON"""
@@ -98,6 +110,43 @@ class AgentOrchestrator:
             normalized = params
 
         return normalized
+
+    def _get_rag_context(self, query: str) -> str:
+        """获取 RAG 上下文（相关工具 + 业务知识）"""
+        from config import get_settings
+        settings = get_settings()
+
+        context_parts = []
+
+        # 1. Tool RAG 检索
+        if hasattr(self, '_tool_rag') and self._tool_rag:
+            try:
+                similar_tools = self._tool_rag.search(query, top_k=settings.rag_top_k_tools)
+                if similar_tools:
+                    tool_lines = ["【相关工具】（按相似度排序）："]
+                    for t in similar_tools:
+                        similarity = t.get('similarity', 0)
+                        tool_lines.append(f"  - {t['tool_name']}: {t['description']} (匹配度: {similarity:.2f})")
+                    context_parts.append("\n".join(tool_lines))
+                    logger.info(f"【RAG检索】找到 {len(similar_tools)} 个相关工具")
+            except Exception as e:
+                logger.warning(f"【RAG检索】ToolRAG 失败: {e}")
+
+        # 2. Knowledge RAG 检索
+        if hasattr(self, '_knowledge_rag') and self._knowledge_rag:
+            try:
+                relevant_knowledge = self._knowledge_rag.get_relevant_knowledge(
+                    query, threshold=settings.rag_similarity_threshold
+                )
+                if relevant_knowledge:
+                    context_parts.append(relevant_knowledge)
+                    logger.info("【RAG检索】找到相关业务知识")
+            except Exception as e:
+                logger.warning(f"【RAG检索】KnowledgeRAG 失败: {e}")
+
+        if context_parts:
+            return "\n\n".join(context_parts)
+        return ""
 
     def _execute_tool(self, tool_name: str, params: dict) -> str:
         """执行工具"""
@@ -182,9 +231,14 @@ class AgentOrchestrator:
             if intent_type in ("query", "statistic"):
                 logger.info("【路由】进入查询/统计处理流程")
                 logger.info(f"【历史记录】{self.memory_manager.get_history()[:200]}")
+
+                # RAG 增强：检索相关工具和知识
+                rag_context = self._get_rag_context(user_input)
+
                 raw_response = self.query_chain.invoke({
                     "input": user_input,
-                    "chat_history": self.memory_manager.get_history()
+                    "chat_history": self.memory_manager.get_history(),
+                    "rag_context": rag_context
                 })
                 logger.info(f"【查询链返回】原始响应: {str(raw_response)[:300]}")
 
