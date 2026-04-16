@@ -1,6 +1,6 @@
 import json
 import logging
-from typing import Optional
+from typing import Optional, Dict, List, Any
 
 logger = logging.getLogger(__name__)
 
@@ -24,6 +24,7 @@ class AgentOrchestrator:
         self._tools_map = {}  # 工具名到工具对象的映射
         self._tool_rag = None
         self._knowledge_rag = None
+        self._query_cache: Dict[str, Any] = {}  # 请求级缓存
 
     def set_tools(self, tools):
         """设置可用工具（由 dependencies.py 调用）"""
@@ -42,11 +43,121 @@ class AgentOrchestrator:
         self._knowledge_rag = knowledge_rag
         logger.info("【KnowledgeRAG】已设置")
 
+    def _keyword_search_tools(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
+        """关键词匹配降级搜索
+
+        当 ChromaDB 不可用时，使用关键词匹配找到相关工具
+        """
+        query_lower = query.lower()
+        query_words = set(query_lower.replace("_", " ").split())
+
+        scored_tools = []
+        for name, tool in self._tools_map.items():
+            desc_lower = tool.description.lower().replace("_", " ") if tool.description else ""
+
+            # 计算关键词匹配分数
+            matches = 0
+            for word in query_words:
+                if word in name.lower() or word in desc_lower:
+                    matches += 1
+
+            if matches > 0:
+                # 部分匹配
+                score = matches / len(query_words)
+                scored_tools.append({
+                    "tool_name": name,
+                    "description": tool.description if tool.description else "",
+                    "similarity": score,
+                    "is_keyword_match": True
+                })
+
+        # 按分数排序
+        scored_tools.sort(key=lambda x: x["similarity"], reverse=True)
+        return scored_tools[:top_k]
+
+    def _search_all_rag(self, query: str) -> Dict[str, Any]:
+        """合并 RAG 检索（工具 + 知识）- 一次 embedding 计算
+
+        使用请求级缓存避免重复计算
+        """
+        # 检查缓存
+        if query in self._query_cache:
+            logger.info("【RAG检索】使用缓存结果")
+            return self._query_cache[query]
+
+        from settings import get_settings
+        settings = get_settings()
+
+        result = {
+            "tools": [],
+            "knowledge": "",
+            "error": None
+        }
+
+        # 1. Tool RAG 检索（带关键词降级）
+        if hasattr(self, '_tool_rag') and self._tool_rag:
+            try:
+                tools = self._tool_rag.search(query, top_k=settings.rag_top_k_tools)
+                if tools:
+                    result["tools"] = tools
+                    logger.info(f"【RAG检索】向量检索找到 {len(tools)} 个工具")
+                else:
+                    # ChromaDB 返回空，降级到关键词匹配
+                    logger.warning("【RAG检索】向量检索无结果，降级到关键词匹配")
+                    result["tools"] = self._keyword_search_tools(query, settings.rag_top_k_tools)
+            except Exception as e:
+                # ChromaDB 异常，降级到关键词匹配
+                logger.warning(f"【RAG检索】向量检索失败: {e}，降级到关键词匹配")
+                result["tools"] = self._keyword_search_tools(query, settings.rag_top_k_tools)
+                result["error"] = str(e)
+
+        # 2. Knowledge RAG 检索
+        if hasattr(self, '_knowledge_rag') and self._knowledge_rag:
+            try:
+                knowledge = self._knowledge_rag.get_relevant_knowledge(
+                    query, threshold=settings.rag_similarity_threshold
+                )
+                if knowledge:
+                    result["knowledge"] = knowledge
+                    logger.info("【RAG检索】找到相关业务知识")
+            except Exception as e:
+                logger.warning(f"【RAG检索】KnowledgeRAG 失败: {e}")
+
+        # 缓存结果
+        self._query_cache[query] = result
+        return result
+
+    def _get_rag_context(self, query: str) -> str:
+        """获取 RAG 上下文（相关工具 + 业务知识）"""
+        from settings import get_settings
+        settings = get_settings()
+
+        context_parts = []
+
+        # 使用合并检索（一次 embedding）
+        rag_result = self._search_all_rag(query)
+
+        # 1. 构建工具上下文
+        if rag_result["tools"]:
+            tool_lines = ["【相关工具】（按相似度排序）："]
+            for t in rag_result["tools"]:
+                similarity = t.get('similarity', 0)
+                match_type = "(关键词)" if t.get('is_keyword_match') else ""
+                tool_lines.append(f"  - {t['tool_name']}: {t['description']} {match_type}(匹配度: {similarity:.2f})")
+            context_parts.append("\n".join(tool_lines))
+
+        # 2. 构建知识上下文
+        if rag_result["knowledge"]:
+            context_parts.append(rag_result["knowledge"])
+
+        if context_parts:
+            return "\n\n".join(context_parts)
+        return ""
+
     def _parse_llm_json(self, text: str) -> Optional[dict]:
         """解析 LLM 返回的 JSON"""
         try:
             text = text.strip()
-            # 尝试提取 JSON 对象（支持嵌套）
             start = text.find('{')
             end = text.rfind('}')
             if start != -1 and end != -1 and end > start:
@@ -58,7 +169,7 @@ class AgentOrchestrator:
             return None
 
     def _find_tool(self, tool_name: str):
-        """根据名称查找工具（使用 RAG 语义相似度匹配）"""
+        """根据名称查找工具（使用缓存 RAG + 关键词降级）"""
         from settings import get_settings
         settings = get_settings()
 
@@ -68,10 +179,22 @@ class AgentOrchestrator:
             logger.info(f"【工具查找】直接匹配: {tool_name}")
             return tool
 
-        # 2. RAG 语义相似度匹配
+        # 2. 尝试从缓存的 RAG 结果中查找
+        cached_tools = None
+        for query, cached in self._query_cache.items():
+            if cached.get("tools"):
+                for t in cached["tools"]:
+                    if t.get("tool_name") == tool_name:
+                        similarity = t.get("similarity", 0)
+                        if similarity >= settings.tool_match_threshold:
+                            matched = self._tools_map.get(tool_name)
+                            if matched:
+                                logger.info(f"【工具查找】缓存命中: {tool_name} (相似度: {similarity:.3f})")
+                                return matched
+
+        # 3. RAG 语义匹配
         if hasattr(self, '_tool_rag') and self._tool_rag:
             try:
-                # 使用工具名作为查询，在向量库中找最相似的
                 results = self._tool_rag.search(tool_name, top_k=1)
                 if results:
                     best_match = results[0]
@@ -80,15 +203,25 @@ class AgentOrchestrator:
 
                     logger.info(f"【工具查找】RAG匹配: {tool_name} → {matched_name} (相似度: {similarity:.3f})")
 
-                    # 相似度高于阈值才使用
-                    if similarity >= settings.rag_tool_match_threshold:
+                    if similarity >= settings.tool_match_threshold:
                         matched_tool = self._tools_map.get(matched_name)
                         if matched_tool:
                             return matched_tool
                     else:
-                        logger.warning(f"【工具查找】RAG匹配相似度太低: {similarity:.3f} < {settings.rag_tool_match_threshold}")
+                        logger.warning(f"【工具查找】RAG匹配相似度太低: {similarity:.3f} < {settings.tool_match_threshold}")
             except Exception as e:
-                logger.error(f"【工具查找】RAG匹配失败: {e}")
+                logger.warning(f"【工具查找】RAG匹配失败: {e}")
+
+        # 4. 关键词降级匹配
+        logger.info(f"【工具查找】尝试关键词匹配: {tool_name}")
+        keyword_results = self._keyword_search_tools(tool_name, top_k=1)
+        if keyword_results:
+            best = keyword_results[0]
+            if best['similarity'] >= settings.tool_match_threshold * 0.8:  # 关键词阈值放宽
+                matched = self._tools_map.get(best['tool_name'])
+                if matched:
+                    logger.info(f"【工具查找】关键词匹配: {tool_name} → {best['tool_name']} (分数: {best['similarity']:.3f})")
+                    return matched
 
         logger.error(f"【工具查找】未找到工具: {tool_name}")
         return None
@@ -99,69 +232,26 @@ class AgentOrchestrator:
             return params
 
         normalized = {}
-        # 获取工具 schema 中的字段名
         try:
             schema_fields = tool.input_schema.model_fields if hasattr(tool.input_schema, 'model_fields') else {}
             schema_field_names = set(schema_fields.keys())
 
             for key, value in params.items():
-                # 尝试直接匹配
                 if key in schema_field_names:
                     normalized[key] = value
                 else:
-                    # 尝试转换：user_id -> userId 或 userId -> user_id
                     alt1 = key.replace('_', '')
-                    alt2 = ''.join('_' + c.lower() if c.isupper() else c for c in key)
-
                     for schema_key in schema_field_names:
                         if schema_key.lower().replace('_', '') == alt1.lower().replace('_', ''):
                             normalized[schema_key] = value
                             break
                     else:
-                        # 没找到匹配，使用原参数名
                         normalized[key] = value
         except Exception as e:
             logger.warning(f"【参数规范化】失败: {e}，使用原始参数")
             normalized = params
 
         return normalized
-
-    def _get_rag_context(self, query: str) -> str:
-        """获取 RAG 上下文（相关工具 + 业务知识）"""
-        from settings import get_settings
-        settings = get_settings()
-
-        context_parts = []
-
-        # 1. Tool RAG 检索
-        if hasattr(self, '_tool_rag') and self._tool_rag:
-            try:
-                similar_tools = self._tool_rag.search(query, top_k=settings.rag_top_k_tools)
-                if similar_tools:
-                    tool_lines = ["【相关工具】（按相似度排序）："]
-                    for t in similar_tools:
-                        similarity = t.get('similarity', 0)
-                        tool_lines.append(f"  - {t['tool_name']}: {t['description']} (匹配度: {similarity:.2f})")
-                    context_parts.append("\n".join(tool_lines))
-                    logger.info(f"【RAG检索】找到 {len(similar_tools)} 个相关工具")
-            except Exception as e:
-                logger.warning(f"【RAG检索】ToolRAG 失败: {e}")
-
-        # 2. Knowledge RAG 检索
-        if hasattr(self, '_knowledge_rag') and self._knowledge_rag:
-            try:
-                relevant_knowledge = self._knowledge_rag.get_relevant_knowledge(
-                    query, threshold=settings.rag_similarity_threshold
-                )
-                if relevant_knowledge:
-                    context_parts.append(relevant_knowledge)
-                    logger.info("【RAG检索】找到相关业务知识")
-            except Exception as e:
-                logger.warning(f"【RAG检索】KnowledgeRAG 失败: {e}")
-
-        if context_parts:
-            return "\n\n".join(context_parts)
-        return ""
 
     def _execute_tool(self, tool_name: str, params: dict) -> str:
         """执行工具（带详细日志）"""
@@ -175,7 +265,6 @@ class AgentOrchestrator:
             logger.error(f"【工具调用】!!! 工具未找到: {tool_name}")
             return f"错误：未找到工具 '{tool_name}'，可用工具: {available}"
 
-        # 规范化参数名
         params = self._normalize_params(params, tool)
         logger.info(f"【工具调用】    规范化参数: {params}")
 
@@ -232,21 +321,22 @@ class AgentOrchestrator:
             logger.info("=" * 50)
             logger.info(f"【开始处理】用户输入: {user_input[:100]}")
 
+            # 清理请求级缓存
+            self._query_cache.clear()
+
             # 1. 意图识别
             logger.info("【步骤1】开始意图识别...")
             intent_result = self.intent_chain.invoke({"user_input": user_input})
             logger.info(f"【步骤1】意图识别返回: {intent_result}, 类型: {type(intent_result)}")
 
-            # 提取 Intent 对象
             intent_obj = intent_result if hasattr(intent_result, 'intent') else None
 
             if intent_obj:
                 intent_type = intent_obj.intent
                 logger.info(f"【意图识别】类型: {intent_type}, 原因: {intent_obj.reason}")
             else:
-                # 降级处理：默认按查询处理
                 intent_type = "query"
-                logger.warning(f"【意图识别】降级处理，默认按 query 处理")
+                logger.warning("【意图识别】降级处理，默认按 query 处理")
 
             # 2. 路由分发
             logger.info(f"【步骤2】开始路由分发，意图类型: {intent_type}")
@@ -255,7 +345,7 @@ class AgentOrchestrator:
                 logger.info("【路由】进入查询/统计处理流程")
                 logger.info(f"【历史记录】{self.memory_manager.get_history()[:200]}")
 
-                # RAG 增强：检索相关工具和知识
+                # RAG 增强（使用缓存避免重复 embedding）
                 rag_context = self._get_rag_context(user_input)
 
                 raw_response = self.query_chain.invoke({
@@ -265,14 +355,12 @@ class AgentOrchestrator:
                 })
                 logger.info(f"【查询链返回】原始响应: {str(raw_response)[:300]}")
 
-                # 解析 JSON
                 parsed = self._parse_llm_json(raw_response)
                 logger.info(f"【调试】parsed 内容: {parsed}, _tools_map 工具数: {len(self._tools_map)}")
 
                 need_tool = parsed.get("need_tool") if parsed else None
                 tool_name = parsed.get("tool") if parsed else None
 
-                # 处理字符串 "true" 的情况
                 if isinstance(need_tool, str):
                     need_tool = need_tool.lower() == "true"
 
@@ -282,13 +370,11 @@ class AgentOrchestrator:
                     params = parsed.get("params", {})
                     logger.info(f"【工具调用】{tool_name}，参数: {params}")
                     tool_result = self._execute_tool(tool_name, params)
-                    # 润色结果
                     logger.info("【结果润色】开始润色工具返回结果...")
                     response = self._polish_result(tool_result, user_input)
                 elif parsed and not need_tool:
                     response = parsed.get("answer", "无法理解您的问题")
                 else:
-                    # 降级：直接返回 LLM 输出
                     response = raw_response
                     logger.warning("【解析失败】降级为直接返回 LLM 输出")
 
