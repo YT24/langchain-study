@@ -3,7 +3,8 @@ import {
   getTools, getCategories, getToolActions,
   createTool, updateTool, deleteTool,
   enableTool, disableTool,
-  createCategory, deleteCategory
+  createCategory, deleteCategory,
+  createAction, deleteAction
 } from '../services/api'
 
 export default function ToolManagement() {
@@ -17,11 +18,16 @@ export default function ToolManagement() {
   const [searchKeyword, setSearchKeyword] = useState('')
   const [selectedCategory, setSelectedCategory] = useState('')
 
+  // 展开的工具
+  const [expandedTool, setExpandedTool] = useState(null)
+  const [expandedActions, setExpandedActions] = useState({})
+
   // 模态框状态
   const [showToolModal, setShowToolModal] = useState(false)
   const [showCategoryModal, setShowCategoryModal] = useState(false)
+  const [showActionModal, setShowActionModal] = useState(false)
   const [editingTool, setEditingTool] = useState(null)
-  const [editingCategory, setEditingCategory] = useState(null)
+  const [editingToolForAction, setEditingToolForAction] = useState(null)
   const [toolActions, setToolActions] = useState([])
 
   // 表单数据
@@ -30,6 +36,9 @@ export default function ToolManagement() {
   })
   const [categoryForm, setCategoryForm] = useState({
     name: '', code: '', icon: 'folder', description: ''
+  })
+  const [actionForm, setActionForm] = useState({
+    name: '', displayName: '', description: '', endpoint: '', httpMethod: 'POST', requestParams: ''
   })
 
   useEffect(() => {
@@ -63,6 +72,23 @@ export default function ToolManagement() {
     const matchCategory = !selectedCategory || tool.categoryId === Number(selectedCategory)
     return matchKeyword && matchCategory
   })
+
+  // 展开/收起工具
+  const toggleExpandTool = async (tool) => {
+    if (expandedTool === tool.id) {
+      setExpandedTool(null)
+    } else {
+      setExpandedTool(tool.id)
+      if (!expandedActions[tool.id]) {
+        try {
+          const res = await getToolActions(tool.id)
+          if (res.success) {
+            setExpandedActions(prev => ({ ...prev, [tool.id]: res.data || [] }))
+          }
+        } catch (e) {}
+      }
+    }
+  }
 
   // 工具表单提交
   const handleToolSubmit = async (e) => {
@@ -117,7 +143,6 @@ export default function ToolManagement() {
       version: tool.version,
       icon: tool.icon
     })
-    // 获取该工具的动作
     try {
       const res = await getToolActions(tool.id)
       if (res.success) {
@@ -138,6 +163,45 @@ export default function ToolManagement() {
   const resetToolForm = () => {
     setToolForm({ name: '', displayName: '', description: '', categoryId: '', version: '1.0', icon: 'box' })
     setToolActions([])
+  }
+
+  // 打开 Action 创建
+  const openActionCreate = (tool) => {
+    setEditingToolForAction(tool)
+    setActionForm({ name: '', displayName: '', description: '', endpoint: '', httpMethod: 'POST', requestParams: '' })
+    setShowActionModal(true)
+  }
+
+  // 创建 Action
+  const handleActionSubmit = async (e) => {
+    e.preventDefault()
+    try {
+      await createAction({
+        toolId: editingToolForAction.id,
+        ...actionForm
+      })
+      setShowActionModal(false)
+      const res = await getToolActions(editingToolForAction.id)
+      if (res.success) {
+        setExpandedActions(prev => ({ ...prev, [editingToolForAction.id]: res.data || [] }))
+      }
+    } catch (e) {
+      alert('创建失败')
+    }
+  }
+
+  // 删除 Action
+  const handleDeleteAction = async (action) => {
+    if (!confirm(`确定删除动作 "${action.displayName || action.name}" 吗？`)) return
+    try {
+      await deleteAction(action.id)
+      const res = await getToolActions(expandedTool)
+      if (res.success) {
+        setExpandedActions(prev => ({ ...prev, [expandedTool]: res.data || [] }))
+      }
+    } catch (e) {
+      alert('删除失败')
+    }
   }
 
   // 分类表单提交
@@ -189,7 +253,7 @@ export default function ToolManagement() {
         </div>
         <div className="tool-actions">
           <button className="btn btn-secondary" onClick={() => setShowCategoryModal(true)}>
-            + 添加工具分类
+            + 分类管理
           </button>
           <button className="btn btn-primary" onClick={openToolCreate}>
             + 新建工具
@@ -206,23 +270,22 @@ export default function ToolManagement() {
 
       {/* 工具列表 */}
       {filteredTools.length > 0 ? (
-        <div className="tool-grid">
+        <div className="tool-list">
           {filteredTools.map(tool => (
-            <div key={tool.id} className={`tool-card ${tool.status === 0 ? 'disabled' : ''}`}>
-              <div className="tool-card-header">
-                <span className="tool-icon">{tool.icon || '📦'}</span>
-                <div className="tool-info">
-                  <h3>{tool.displayName || tool.name}</h3>
-                  <span className="tool-name">{tool.name}</span>
+            <div key={tool.id} className={`tool-card ${tool.status === 0 ? 'disabled' : ''} ${expandedTool === tool.id ? 'expanded' : ''}`}>
+              <div className="tool-card-main" onClick={() => toggleExpandTool(tool)}>
+                <div className="tool-card-header">
+                  <span className="expand-icon">{expandedTool === tool.id ? '▼' : '▶'}</span>
+                  <span className="tool-icon">{tool.icon || '📦'}</span>
+                  <div className="tool-info">
+                    <h3>{tool.displayName || tool.name}</h3>
+                    <span className="tool-name">{tool.name}</span>
+                  </div>
+                  <span className={`status-badge ${tool.status === 1 ? 'enabled' : 'disabled'}`}>
+                    {tool.status === 1 ? '已启用' : '已禁用'}
+                  </span>
                 </div>
-                <span className={`status-badge ${tool.status === 1 ? 'enabled' : 'disabled'}`}>
-                  {tool.status === 1 ? '已启用' : '已禁用'}
-                </span>
-              </div>
-              <p className="tool-desc">{tool.description || '暂无描述'}</p>
-              <div className="tool-card-footer">
-                <span className="tool-version">v{tool.version || '1.0'}</span>
-                <div className="tool-card-actions">
+                <div className="tool-card-actions" onClick={e => e.stopPropagation()}>
                   <button className="btn-icon" onClick={() => toggleToolStatus(tool)} title={tool.status === 1 ? '禁用' : '启用'}>
                     {tool.status === 1 ? '⏸' : '▶'}
                   </button>
@@ -230,6 +293,37 @@ export default function ToolManagement() {
                   <button className="btn-icon danger" onClick={() => handleDeleteTool(tool)} title="删除">🗑</button>
                 </div>
               </div>
+
+              {/* 展开的 Actions 列表 */}
+              {expandedTool === tool.id && (
+                <div className="tool-actions-panel">
+                  <div className="actions-header">
+                    <h4>Actions ({expandedActions[tool.id]?.length || 0})</h4>
+                    <button className="btn btn-sm" onClick={() => openActionCreate(tool)}>
+                      + 添加 Action
+                    </button>
+                  </div>
+                  {expandedActions[tool.id]?.length > 0 ? (
+                    <div className="actions-list">
+                      {expandedActions[tool.id].map(action => (
+                        <div key={action.id} className="action-item">
+                          <div className="action-info">
+                            <span className="action-name">{action.displayName || action.name}</span>
+                            <span className="action-endpoint">{action.httpMethod} {action.endpoint}</span>
+                            <span className="action-desc">{action.description}</span>
+                          </div>
+                          <div className="action-methods">
+                            <span className={`method-badge ${action.httpMethod}`}>{action.httpMethod}</span>
+                            <button className="btn-icon danger" onClick={() => handleDeleteAction(action)} title="删除">🗑</button>
+                          </div>
+                        </div>
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="actions-empty">暂无 Action，请添加</div>
+                  )}
+                </div>
+              )}
             </div>
           ))}
         </div>
@@ -327,12 +421,85 @@ export default function ToolManagement() {
         </div>
       )}
 
+      {/* Action 模态框 */}
+      {showActionModal && (
+        <div className="modal-overlay" onClick={() => setShowActionModal(false)}>
+          <div className="modal" onClick={e => e.stopPropagation()}>
+            <div className="modal-header">
+              <h2>添加 Action - {editingToolForAction?.displayName}</h2>
+              <button className="modal-close" onClick={() => setShowActionModal(false)}>×</button>
+            </div>
+            <form onSubmit={handleActionSubmit}>
+              <div className="form-group">
+                <label>Action 名称 *</label>
+                <input
+                  type="text"
+                  value={actionForm.name}
+                  onChange={e => setActionForm({...actionForm, name: e.target.value})}
+                  required
+                  placeholder="如: query_order_list"
+                />
+              </div>
+              <div className="form-group">
+                <label>显示名称 *</label>
+                <input
+                  type="text"
+                  value={actionForm.displayName}
+                  onChange={e => setActionForm({...actionForm, displayName: e.target.value})}
+                  required
+                  placeholder="如: 查询订单列表"
+                />
+              </div>
+              <div className="form-group">
+                <label>描述</label>
+                <input
+                  type="text"
+                  value={actionForm.description}
+                  onChange={e => setActionForm({...actionForm, description: e.target.value})}
+                  placeholder="功能描述"
+                />
+              </div>
+              <div className="form-row">
+                <div className="form-group">
+                  <label>HTTP 方法</label>
+                  <select
+                    value={actionForm.httpMethod}
+                    onChange={e => setActionForm({...actionForm, httpMethod: e.target.value})}
+                  >
+                    <option value="POST">POST</option>
+                    <option value="GET">GET</option>
+                  </select>
+                </div>
+                <div className="form-group">
+                  <label>端点 *</label>
+                  <input
+                    type="text"
+                    value={actionForm.endpoint}
+                    onChange={e => setActionForm({...actionForm, endpoint: e.target.value})}
+                    required
+                    placeholder="/tools/order/query"
+                  />
+                </div>
+              </div>
+              <div className="modal-footer">
+                <button type="button" className="btn btn-secondary" onClick={() => setShowActionModal(false)}>
+                  取消
+                </button>
+                <button type="submit" className="btn btn-primary">
+                  创建
+                </button>
+              </div>
+            </form>
+          </div>
+        </div>
+      )}
+
       {/* 分类模态框 */}
       {showCategoryModal && (
         <div className="modal-overlay" onClick={() => setShowCategoryModal(false)}>
           <div className="modal" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>添加工具分类</h2>
+              <h2>工具分类管理</h2>
               <button className="modal-close" onClick={() => setShowCategoryModal(false)}>×</button>
             </div>
             <div className="category-list">
@@ -466,6 +633,11 @@ export default function ToolManagement() {
           border: none;
         }
 
+        .btn-sm {
+          padding: 6px 12px;
+          font-size: 12px;
+        }
+
         .btn-primary {
           background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
           color: #fff;
@@ -486,34 +658,51 @@ export default function ToolManagement() {
           background: rgba(255, 255, 255, 0.1);
         }
 
-        .tool-grid {
-          display: grid;
-          grid-template-columns: repeat(auto-fill, minmax(320px, 1fr));
-          gap: 16px;
+        .tool-list {
+          display: flex;
+          flex-direction: column;
+          gap: 12px;
         }
 
         .tool-card {
           background: rgba(255, 255, 255, 0.05);
           border: 1px solid rgba(255, 255, 255, 0.1);
           border-radius: 12px;
-          padding: 16px;
+          overflow: hidden;
           transition: all 0.3s ease;
         }
 
         .tool-card:hover {
           border-color: rgba(99, 102, 241, 0.3);
-          background: rgba(255, 255, 255, 0.05);
         }
 
         .tool-card.disabled {
-          opacity: 0.5;
+          opacity: 0.6;
+        }
+
+        .tool-card.expanded {
+          border-color: rgba(99, 102, 241, 0.5);
+        }
+
+        .tool-card-main {
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+          padding: 16px;
+          cursor: pointer;
         }
 
         .tool-card-header {
           display: flex;
           align-items: center;
           gap: 12px;
-          margin-bottom: 12px;
+          flex: 1;
+        }
+
+        .expand-icon {
+          color: rgba(255, 255, 255, 0.4);
+          font-size: 12px;
+          width: 16px;
         }
 
         .tool-icon {
@@ -553,26 +742,6 @@ export default function ToolManagement() {
           color: rgba(255, 255, 255, 0.5);
         }
 
-        .tool-desc {
-          font-size: 13px;
-          color: rgba(255, 255, 255, 0.6);
-          margin: 0 0 12px;
-          line-height: 1.5;
-        }
-
-        .tool-card-footer {
-          display: flex;
-          justify-content: space-between;
-          align-items: center;
-          padding-top: 12px;
-          border-top: 1px solid rgba(255, 255, 255, 0.05);
-        }
-
-        .tool-version {
-          font-size: 12px;
-          color: rgba(255, 255, 255, 0.4);
-        }
-
         .tool-card-actions {
           display: flex;
           gap: 8px;
@@ -589,6 +758,7 @@ export default function ToolManagement() {
           align-items: center;
           justify-content: center;
           transition: all 0.2s;
+          font-size: 14px;
         }
 
         .btn-icon:hover {
@@ -599,39 +769,94 @@ export default function ToolManagement() {
           background: rgba(239, 68, 68, 0.2);
         }
 
-        .error-message {
-          background: rgba(239, 68, 68, 0.1);
-          border: 1px solid rgba(239, 68, 68, 0.3);
-          color: #ef4444;
-          padding: 12px 16px;
+        /* Actions Panel */
+        .tool-actions-panel {
+          background: rgba(0, 0, 0, 0.2);
+          border-top: 1px solid rgba(255, 255, 255, 0.08);
+          padding: 16px;
+        }
+
+        .actions-header {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          margin-bottom: 12px;
+        }
+
+        .actions-header h4 {
+          margin: 0;
+          font-size: 14px;
+          color: rgba(255, 255, 255, 0.7);
+        }
+
+        .actions-list {
+          display: flex;
+          flex-direction: column;
+          gap: 8px;
+        }
+
+        .action-item {
+          display: flex;
+          justify-content: space-between;
+          align-items: center;
+          padding: 12px;
+          background: rgba(255, 255, 255, 0.03);
           border-radius: 8px;
-          margin-bottom: 16px;
+          border: 1px solid rgba(255, 255, 255, 0.05);
+        }
+
+        .action-info {
+          display: flex;
+          flex-direction: column;
+          gap: 4px;
+          flex: 1;
+        }
+
+        .action-name {
+          font-weight: 500;
+          color: #fff;
+        }
+
+        .action-endpoint {
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.5);
+          font-family: monospace;
+        }
+
+        .action-desc {
+          font-size: 12px;
+          color: rgba(255, 255, 255, 0.4);
+        }
+
+        .action-methods {
           display: flex;
           align-items: center;
-          justify-content: space-between;
+          gap: 8px;
         }
 
-        .error-message button {
-          background: none;
-          border: none;
-          color: #ef4444;
-          font-size: 18px;
-          cursor: pointer;
+        .method-badge {
+          padding: 4px 8px;
+          border-radius: 4px;
+          font-size: 11px;
+          font-weight: 600;
+          font-family: monospace;
         }
 
-        .empty-state {
+        .method-badge.POST {
+          background: rgba(34, 197, 94, 0.2);
+          color: #22c55e;
+        }
+
+        .method-badge.GET {
+          background: rgba(59, 130, 246, 0.2);
+          color: #3b82f6;
+        }
+
+        .actions-empty {
           text-align: center;
-          padding: 60px 20px;
-          color: rgba(255, 255, 255, 0.5);
-        }
-
-        .empty-state-icon {
-          font-size: 48px;
-          margin-bottom: 16px;
-        }
-
-        .empty-state p {
-          margin: 0 0 20px;
+          padding: 20px;
+          color: rgba(255, 255, 255, 0.4);
+          font-size: 13px;
         }
 
         /* Modal */
@@ -720,14 +945,14 @@ export default function ToolManagement() {
           border-color: var(--accent-primary);
         }
 
-        .form-group select option {
-          background: #1a1a2e;
-          color: #fff;
-        }
-
         .form-group input:disabled {
           opacity: 0.5;
           cursor: not-allowed;
+        }
+
+        .form-group select option {
+          background: #1a1a2e;
+          color: #fff;
         }
 
         .form-row {
@@ -780,6 +1005,41 @@ export default function ToolManagement() {
         .category-form {
           border-top: 1px solid rgba(255, 255, 255, 0.1);
           margin-top: 0;
+        }
+
+        .error-message {
+          background: rgba(239, 68, 68, 0.1);
+          border: 1px solid rgba(239, 68, 68, 0.3);
+          color: #ef4444;
+          padding: 12px 16px;
+          border-radius: 8px;
+          margin-bottom: 16px;
+          display: flex;
+          align-items: center;
+          justify-content: space-between;
+        }
+
+        .error-message button {
+          background: none;
+          border: none;
+          color: #ef4444;
+          font-size: 18px;
+          cursor: pointer;
+        }
+
+        .empty-state {
+          text-align: center;
+          padding: 60px 20px;
+          color: rgba(255, 255, 255, 0.5);
+        }
+
+        .empty-state-icon {
+          font-size: 48px;
+          margin-bottom: 16px;
+        }
+
+        .empty-state p {
+          margin: 0 0 20px;
         }
       `}</style>
     </div>
