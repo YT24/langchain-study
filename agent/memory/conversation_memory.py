@@ -9,6 +9,28 @@ class ConversationMemoryManager:
     def __init__(self, max_token_limit: int = 2000):
         self.max_token_limit = max_token_limit
         self._sessions: Dict[str, ConversationBufferMemory] = {}
+        self._turn_counts: Dict[str, int] = {}  # 追踪对话轮次
+        self._memory_rag = None  # 长期记忆模块
+
+    def set_memory_rag(self, memory_rag):
+        """注入长期记忆模块"""
+        self._memory_rag = memory_rag
+
+    def increment_turn(self, user_id: Optional[str] = None) -> int:
+        """增加对话轮次计数"""
+        key = user_id or "_default_"
+        self._turn_counts[key] = self._turn_counts.get(key, 0) + 1
+        return self._turn_counts[key]
+
+    def get_turn_count(self, user_id: Optional[str] = None) -> int:
+        """获取当前对话轮次"""
+        key = user_id or "_default_"
+        return self._turn_counts.get(key, 0)
+
+    def reset_turn_count(self, user_id: Optional[str] = None) -> None:
+        """重置对话轮次计数"""
+        key = user_id or "_default_"
+        self._turn_counts[key] = 0
 
     def _get_memory(self, user_id: Optional[str] = None) -> ConversationBufferMemory:
         """获取用户对应的 memory 实例"""

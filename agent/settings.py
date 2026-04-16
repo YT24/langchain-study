@@ -46,12 +46,17 @@ class Settings:
         self.embedding_dimension = get_config("rag.yml", "embedding", "dimension", default=512)
         self.chroma_persist_directory = os.path.join(base_dir, get_config("rag.yml", "chroma", "persist_directory", default=".chroma"))
         self.rag_similarity_threshold = get_config("rag.yml", "retrieval", "tool_similarity_threshold", default=0.5)
-        self.rag_tool_match_threshold = get_config("rag.yml", "retrieval", "tool_match_threshold", default=0.4)
         self.rag_top_k_tools = get_config("rag.yml", "retrieval", "tool_top_k", default=3)
         self.rag_top_k_knowledge = get_config("rag.yml", "retrieval", "knowledge_top_k", default=3)
 
+        # Memory RAG
+        self.memory_rag_top_k = get_config("rag.yml", "memory", "top_k", default=3)
+        self.memory_summary_threshold = get_config("rag.yml", "memory", "summary_threshold", default=5)
+        self.memory_similarity_threshold = get_config("rag.yml", "memory", "similarity_threshold", default=0.5)
+
         # Tools
         self.http_timeout = get_config("tools.yml", "http", "timeout", default=30)
+        self.tool_match_threshold = get_config("tools.yml", "matching", "rag_threshold", default=0.4)
 
 
 @lru_cache

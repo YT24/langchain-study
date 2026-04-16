@@ -24,6 +24,7 @@ class AgentOrchestrator:
         self._tools_map = {}  # 工具名到工具对象的映射
         self._tool_rag = None
         self._knowledge_rag = None
+        self._memory_rag = None  # 长期记忆 RAG
         self._query_cache: Dict[str, Any] = {}  # 请求级缓存
 
     def set_tools(self, tools):
@@ -42,6 +43,11 @@ class AgentOrchestrator:
         """设置知识 RAG"""
         self._knowledge_rag = knowledge_rag
         logger.info("【KnowledgeRAG】已设置")
+
+    def set_memory_rag(self, memory_rag):
+        """设置长期记忆 RAG"""
+        self._memory_rag = memory_rag
+        logger.info("【MemoryRAG】已设置")
 
     def _keyword_search_tools(self, query: str, top_k: int = 5) -> List[Dict[str, Any]]:
         """关键词匹配降级搜索
@@ -75,15 +81,16 @@ class AgentOrchestrator:
         scored_tools.sort(key=lambda x: x["similarity"], reverse=True)
         return scored_tools[:top_k]
 
-    def _search_all_rag(self, query: str) -> Dict[str, Any]:
-        """合并 RAG 检索（工具 + 知识）- 一次 embedding 计算
+    def _search_all_rag(self, query: str, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """合并 RAG 检索（工具 + 知识 + 长期记忆）- 一次 embedding 计算
 
         使用请求级缓存避免重复计算
         """
-        # 检查缓存
-        if query in self._query_cache:
+        # 缓存键包含 query 和 user_id（长期记忆与用户相关）
+        cache_key = f"{user_id or '_'}:{query}"
+        if cache_key in self._query_cache:
             logger.info("【RAG检索】使用缓存结果")
-            return self._query_cache[query]
+            return self._query_cache[cache_key]
 
         from settings import get_settings
         settings = get_settings()
@@ -124,11 +131,11 @@ class AgentOrchestrator:
                 logger.warning(f"【RAG检索】KnowledgeRAG 失败: {e}")
 
         # 缓存结果
-        self._query_cache[query] = result
+        self._query_cache[cache_key] = result
         return result
 
-    def _get_rag_context(self, query: str) -> str:
-        """获取 RAG 上下文（相关工具 + 业务知识）"""
+    def _get_rag_context(self, query: str, user_id: Optional[str] = None) -> str:
+        """获取 RAG 上下文（相关工具 + 业务知识 + 长期记忆）"""
         from settings import get_settings
         settings = get_settings()
 
@@ -150,9 +157,84 @@ class AgentOrchestrator:
         if rag_result["knowledge"]:
             context_parts.append(rag_result["knowledge"])
 
+        # 3. 长期记忆检索
+        if self._memory_rag and user_id:
+            try:
+                memories = self._memory_rag.search(query, user_id, top_k=settings.memory_rag_top_k)
+                if memories:
+                    # 按相似度阈值过滤
+                    threshold = settings.memory_similarity_threshold
+                    filtered_memories = [m for m in memories if m.get('similarity', 0) >= threshold]
+                    if filtered_memories:
+                        memory_lines = ["【相关历史记忆】："]
+                        for m in filtered_memories:
+                            similarity = m.get('similarity', 0)
+                            memory_lines.append(
+                                f"  - 记忆({similarity:.2f}): {m.get('summary', '')} "
+                                f"[实体: {m.get('key_entities', '')} | 主题: {m.get('topics', '')}]"
+                            )
+                        context_parts.append("\n".join(memory_lines))
+                        logger.info(f"【MemoryRAG】检索到 {len(filtered_memories)} 条相关记忆（阈值: {threshold}）")
+            except Exception as e:
+                logger.warning(f"【MemoryRAG】检索失败: {e}")
+
         if context_parts:
             return "\n\n".join(context_parts)
         return ""
+
+    def _generate_memory_summary(self, chat_history: str, conversation_turns: int) -> Optional[Dict[str, Any]]:
+        """使用 LLM 生成对话摘要
+
+        Args:
+            chat_history: 对话历史
+            conversation_turns: 对话轮次数
+
+        Returns:
+            摘要信息 dict 或 None
+        """
+        if not self.llm or not chat_history or chat_history == "无":
+            return None
+
+        from langchain_core.prompts import PromptTemplate
+        from langchain_core.output_parsers.string import StrOutputParser
+
+        template = """你是一个对话摘要助手。请分析以下对话历史，生成结构化摘要。
+
+对话历史：
+{chat_history}
+
+请以 JSON 格式返回摘要，包含以下字段：
+{{
+    "summary": "对话的主要内容摘要（1-2句话）",
+    "key_entities": ["关键实体1", "关键实体2"],  // 用户提到的具体事物、人名、数字等
+    "topics": ["主题1", "主题2"]  // 对话涉及的主题领域
+}}
+
+直接返回 JSON，不要有其他内容："""
+
+        prompt = PromptTemplate.from_template(template)
+        chain = prompt | self.llm | StrOutputParser()
+
+        try:
+            result = chain.invoke({"chat_history": chat_history})
+            logger.info(f"【摘要生成】LLM 返回: {result[:200]}")
+
+            # 解析 JSON 并验证必需字段
+            summary_data = self._parse_llm_json(result)
+            if summary_data and all(k in summary_data for k in ["summary", "key_entities", "topics"]):
+                summary_data["conversation_turns"] = conversation_turns
+                # 确保 key_entities 和 topics 是列表
+                if isinstance(summary_data["key_entities"], str):
+                    summary_data["key_entities"] = [summary_data["key_entities"]]
+                if isinstance(summary_data["topics"], str):
+                    summary_data["topics"] = [summary_data["topics"]]
+                return summary_data
+            logger.warning(f"【摘要生成】LLM 返回格式异常: {result[:100]}")
+            return None
+
+        except Exception as e:
+            logger.error(f"【摘要生成】失败: {e}")
+            return None
 
     def _parse_llm_json(self, text: str) -> Optional[dict]:
         """解析 LLM 返回的 JSON"""
@@ -346,7 +428,7 @@ class AgentOrchestrator:
                 logger.info(f"【历史记录】{self.memory_manager.get_history(user_id)[:200]}")
 
                 # RAG 增强（使用缓存避免重复 embedding）
-                rag_context = self._get_rag_context(user_input)
+                rag_context = self._get_rag_context(user_input, user_id)
 
                 raw_response = self.query_chain.invoke({
                     "input": user_input,
@@ -395,6 +477,37 @@ class AgentOrchestrator:
             logger.info("【步骤3】更新对话记忆")
             self.memory_manager.add_user_message(user_input, user_id)
             self.memory_manager.add_ai_message(str(response), user_id)
+
+            # 4. 长期记忆：轮次计数和摘要生成
+            turn_count = self.memory_manager.increment_turn(user_id)
+            from settings import get_settings
+            settings = get_settings()
+            threshold = settings.memory_summary_threshold
+
+            if turn_count >= threshold and self._memory_rag:
+                logger.info(f"【长期记忆】轮次达到阈值({turn_count}>={threshold})，开始生成摘要")
+                chat_history = self.memory_manager.get_history(user_id)
+                summary_data = self._generate_memory_summary(chat_history, turn_count)
+
+                if summary_data:
+                    memory_id = self._memory_rag.add_memory(
+                        user_id=user_id,
+                        summary=summary_data.get("summary", ""),
+                        key_entities=summary_data.get("key_entities", []),
+                        topics=summary_data.get("topics", []),
+                        conversation_turns=summary_data.get("conversation_turns", turn_count)
+                    )
+                    if memory_id:
+                        logger.info(f"【长期记忆】摘要已存储: {memory_id}")
+                        # 清空短期记忆并重置轮次
+                        self.memory_manager.clear(user_id)
+                        self.memory_manager.reset_turn_count(user_id)
+                        logger.info("【长期记忆】短期记忆已清空，轮次已重置")
+                    else:
+                        logger.warning("【长期记忆】摘要存储失败")
+                else:
+                    logger.warning("【长期记忆】摘要生成失败")
+
             logger.info(f"【最终响应】{str(response)[:100]}")
 
             return str(response)
