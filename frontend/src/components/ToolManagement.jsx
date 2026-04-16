@@ -4,7 +4,7 @@ import {
   createTool, updateTool, deleteTool,
   enableTool, disableTool,
   createCategory, deleteCategory,
-  createAction, deleteAction
+  createAction, deleteAction, updateAction as updateActionApi
 } from '../services/api'
 
 export default function ToolManagement() {
@@ -28,6 +28,7 @@ export default function ToolManagement() {
   const [showActionModal, setShowActionModal] = useState(false)
   const [editingTool, setEditingTool] = useState(null)
   const [editingToolForAction, setEditingToolForAction] = useState(null)
+  const [editingAction, setEditingAction] = useState(null)
   const [toolActions, setToolActions] = useState([])
 
   // 表单数据
@@ -38,7 +39,8 @@ export default function ToolManagement() {
     name: '', code: '', icon: 'folder', description: ''
   })
   const [actionForm, setActionForm] = useState({
-    name: '', displayName: '', description: '', endpoint: '', httpMethod: 'POST', requestParams: ''
+    name: '', displayName: '', description: '', endpoint: '', httpMethod: 'POST',
+    requestParams: '', responseParams: '', exampleRequest: '', exampleResponse: '', sortOrder: 0
   })
 
   useEffect(() => {
@@ -168,22 +170,51 @@ export default function ToolManagement() {
   // 打开 Action 创建
   const openActionCreate = (tool) => {
     setEditingToolForAction(tool)
-    setActionForm({ name: '', displayName: '', description: '', endpoint: '', httpMethod: 'POST', requestParams: '' })
+    setEditingAction(null)
+    setActionForm({
+      name: '', displayName: '', description: '', endpoint: '', httpMethod: 'POST',
+      requestParams: '', responseParams: '', exampleRequest: '', exampleResponse: '', sortOrder: 0
+    })
     setShowActionModal(true)
   }
 
-  // 创建 Action
+  // 打开 Action 编辑
+  const openActionEdit = (action) => {
+    setEditingAction(action)
+    setActionForm({
+      name: action.name || '',
+      displayName: action.displayName || '',
+      description: action.description || '',
+      endpoint: action.endpoint || '',
+      httpMethod: action.httpMethod || 'POST',
+      requestParams: action.requestParams || '',
+      responseParams: action.responseParams || '',
+      exampleRequest: action.exampleRequest || '',
+      exampleResponse: action.exampleResponse || '',
+      sortOrder: action.sortOrder || 0
+    })
+    setShowActionModal(true)
+  }
+
+  // 创建/更新 Action
   const handleActionSubmit = async (e) => {
     e.preventDefault()
     try {
-      await createAction({
-        toolId: editingToolForAction.id,
-        ...actionForm
-      })
+      if (editingAction) {
+        // 更新
+        await updateActionApi(editingAction.id, actionForm)
+      } else {
+        // 创建
+        await createAction({
+          toolId: editingToolForAction.id,
+          ...actionForm
+        })
+      }
       setShowActionModal(false)
-      const res = await getToolActions(editingToolForAction.id)
+      const toolId = editingAction ? editingTool.id : editingToolForAction.id
+      const res = await getToolActions(toolId)
       if (res.success) {
-        setExpandedActions(prev => ({ ...prev, [editingToolForAction.id]: res.data || [] }))
+        setExpandedActions(prev => ({ ...prev, [toolId]: res.data || [] }))
       }
     } catch (e) {
       alert('创建失败')
@@ -306,14 +337,20 @@ export default function ToolManagement() {
                   {expandedActions[tool.id]?.length > 0 ? (
                     <div className="actions-list">
                       {expandedActions[tool.id].map(action => (
-                        <div key={action.id} className="action-item">
+                        <div key={action.id} className="action-item" onClick={() => openActionEdit(action)}>
                           <div className="action-info">
-                            <span className="action-name">{action.displayName || action.name}</span>
-                            <span className="action-endpoint">{action.httpMethod} {action.endpoint}</span>
-                            <span className="action-desc">{action.description}</span>
+                            <div className="action-header-row">
+                              <span className="action-name">{action.displayName || action.name}</span>
+                              <span className={`method-badge ${action.httpMethod}`}>{action.httpMethod}</span>
+                            </div>
+                            <span className="action-endpoint">{action.endpoint}</span>
+                            <span className="action-desc">{action.description || '暂无描述'}</span>
+                            {action.requestParams && (
+                              <span className="action-params">参数: {Object.keys(JSON.parse(action.requestParams || '{}')).join(', ') || '无'}</span>
+                            )}
                           </div>
-                          <div className="action-methods">
-                            <span className={`method-badge ${action.httpMethod}`}>{action.httpMethod}</span>
+                          <div className="action-buttons" onClick={e => e.stopPropagation()}>
+                            <button className="btn-icon" onClick={() => openActionEdit(action)} title="编辑">✏️</button>
                             <button className="btn-icon danger" onClick={() => handleDeleteAction(action)} title="删除">🗑</button>
                           </div>
                         </div>
@@ -424,69 +461,124 @@ export default function ToolManagement() {
       {/* Action 模态框 */}
       {showActionModal && (
         <div className="modal-overlay" onClick={() => setShowActionModal(false)}>
-          <div className="modal" onClick={e => e.stopPropagation()}>
+          <div className="modal modal-lg" onClick={e => e.stopPropagation()}>
             <div className="modal-header">
-              <h2>添加 Action - {editingToolForAction?.displayName}</h2>
+              <h2>{editingAction ? '编辑 Action' : '添加 Action'}</h2>
               <button className="modal-close" onClick={() => setShowActionModal(false)}>×</button>
             </div>
             <form onSubmit={handleActionSubmit}>
-              <div className="form-group">
-                <label>Action 名称 *</label>
-                <input
-                  type="text"
-                  value={actionForm.name}
-                  onChange={e => setActionForm({...actionForm, name: e.target.value})}
-                  required
-                  placeholder="如: query_order_list"
-                />
-              </div>
-              <div className="form-group">
-                <label>显示名称 *</label>
-                <input
-                  type="text"
-                  value={actionForm.displayName}
-                  onChange={e => setActionForm({...actionForm, displayName: e.target.value})}
-                  required
-                  placeholder="如: 查询订单列表"
-                />
-              </div>
-              <div className="form-group">
-                <label>描述</label>
-                <input
-                  type="text"
-                  value={actionForm.description}
-                  onChange={e => setActionForm({...actionForm, description: e.target.value})}
-                  placeholder="功能描述"
-                />
-              </div>
-              <div className="form-row">
-                <div className="form-group">
-                  <label>HTTP 方法</label>
-                  <select
-                    value={actionForm.httpMethod}
-                    onChange={e => setActionForm({...actionForm, httpMethod: e.target.value})}
-                  >
-                    <option value="POST">POST</option>
-                    <option value="GET">GET</option>
-                  </select>
+              <div className="form-section">
+                <h3>基本信息</h3>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>名称 *</label>
+                    <input
+                      type="text"
+                      value={actionForm.name}
+                      onChange={e => setActionForm({...actionForm, name: e.target.value})}
+                      required
+                      placeholder="如: query_order_list"
+                      disabled={!!editingAction}
+                    />
+                  </div>
+                  <div className="form-group">
+                    <label>显示名称 *</label>
+                    <input
+                      type="text"
+                      value={actionForm.displayName}
+                      onChange={e => setActionForm({...actionForm, displayName: e.target.value})}
+                      required
+                      placeholder="如: 查询订单列表"
+                    />
+                  </div>
                 </div>
                 <div className="form-group">
-                  <label>端点 *</label>
+                  <label>描述</label>
                   <input
                     type="text"
-                    value={actionForm.endpoint}
-                    onChange={e => setActionForm({...actionForm, endpoint: e.target.value})}
-                    required
-                    placeholder="/tools/order/query"
+                    value={actionForm.description}
+                    onChange={e => setActionForm({...actionForm, description: e.target.value})}
+                    placeholder="功能描述"
                   />
                 </div>
               </div>
+
+              <div className="form-section">
+                <h3>请求配置</h3>
+                <div className="form-row">
+                  <div className="form-group">
+                    <label>HTTP 方法</label>
+                    <select
+                      value={actionForm.httpMethod}
+                      onChange={e => setActionForm({...actionForm, httpMethod: e.target.value})}
+                    >
+                      <option value="POST">POST</option>
+                      <option value="GET">GET</option>
+                    </select>
+                  </div>
+                  <div className="form-group">
+                    <label>端点 *</label>
+                    <input
+                      type="text"
+                      value={actionForm.endpoint}
+                      onChange={e => setActionForm({...actionForm, endpoint: e.target.value})}
+                      required
+                      placeholder="/tools/order/query"
+                    />
+                  </div>
+                </div>
+                <div className="form-group">
+                  <label>请求参数字段定义 (JSON)</label>
+                  <textarea
+                    value={actionForm.requestParams}
+                    onChange={e => setActionForm({...actionForm, requestParams: e.target.value})}
+                    placeholder={'{"userId": {"type": "string", "required": true, "description": "用户ID"}}'}
+                    rows={4}
+                    className="code-textarea"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>示例请求 (JSON)</label>
+                  <textarea
+                    value={actionForm.exampleRequest}
+                    onChange={e => setActionForm({...actionForm, exampleRequest: e.target.value})}
+                    placeholder='{"userId": "U001"}'
+                    rows={2}
+                    className="code-textarea"
+                  />
+                </div>
+              </div>
+
+              <div className="form-section">
+                <h3>响应配置</h3>
+                <div className="form-group">
+                  <label>响应参数字段定义 (JSON)</label>
+                  <textarea
+                    value={actionForm.responseParams}
+                    onChange={e => setActionForm({...actionForm, responseParams: e.target.value})}
+                    placeholder='{"id": {"type": "number"}, "orderNo": {"type": "string"}}'
+                    rows={3}
+                    className="code-textarea"
+                  />
+                </div>
+                <div className="form-group">
+                  <label>示例响应 (JSON)</label>
+                  <textarea
+                    value={actionForm.exampleResponse}
+                    onChange={e => setActionForm({...actionForm, exampleResponse: e.target.value})}
+                    placeholder='{"success": true, "data": []}'
+                    rows={2}
+                    className="code-textarea"
+                  />
+                </div>
+              </div>
+
               <div className="modal-footer">
                 <button type="button" className="btn btn-secondary" onClick={() => setShowActionModal(false)}>
                   取消
                 </button>
                 <button type="submit" className="btn btn-primary">
-                  创建
+                  {editingAction ? '保存' : '创建'}
                 </button>
               </div>
             </form>
@@ -812,6 +904,12 @@ export default function ToolManagement() {
           flex: 1;
         }
 
+        .action-header-row {
+          display: flex;
+          align-items: center;
+          gap: 8px;
+        }
+
         .action-name {
           font-weight: 500;
           color: #fff;
@@ -828,9 +926,14 @@ export default function ToolManagement() {
           color: rgba(255, 255, 255, 0.4);
         }
 
-        .action-methods {
+        .action-params {
+          font-size: 11px;
+          color: rgba(99, 102, 241, 0.8);
+          font-family: monospace;
+        }
+
+        .action-buttons {
           display: flex;
-          align-items: center;
           gap: 8px;
         }
 
@@ -879,9 +982,13 @@ export default function ToolManagement() {
           border-radius: 16px;
           width: 90%;
           max-width: 500px;
-          max-height: 80vh;
+          max-height: 85vh;
           overflow-y: auto;
           border: 1px solid var(--border-subtle);
+        }
+
+        .modal.modal-lg {
+          max-width: 700px;
         }
 
         .modal-header {
@@ -962,6 +1069,29 @@ export default function ToolManagement() {
 
         .form-row .form-group {
           flex: 1;
+        }
+
+        .form-section {
+          padding: 16px 0;
+          border-bottom: 1px solid rgba(255, 255, 255, 0.08);
+        }
+
+        .form-section:last-of-type {
+          border-bottom: none;
+        }
+
+        .form-section h3 {
+          margin: 0 0 12px;
+          font-size: 14px;
+          font-weight: 600;
+          color: rgba(255, 255, 255, 0.7);
+        }
+
+        .code-textarea {
+          font-family: 'SF Mono', Monaco, monospace;
+          font-size: 12px !important;
+          resize: vertical;
+          min-height: 60px;
         }
 
         .modal-footer {
