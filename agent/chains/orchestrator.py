@@ -58,23 +58,39 @@ class AgentOrchestrator:
             return None
 
     def _find_tool(self, tool_name: str):
-        """根据名称查找工具（支持大小写不敏感）"""
-        # 直接匹配
+        """根据名称查找工具（使用 RAG 语义相似度匹配）"""
+        from settings import get_settings
+        settings = get_settings()
+
+        # 1. 直接匹配
         tool = self._tools_map.get(tool_name)
         if tool:
+            logger.info(f"【工具查找】直接匹配: {tool_name}")
             return tool
 
-        # 大小写不敏感匹配
-        tool_name_lower = tool_name.lower().replace(" ", "_").replace("-", "_")
-        for name, t in self._tools_map.items():
-            if name.lower().replace(" ", "_").replace("-", "_") == tool_name_lower:
-                return t
+        # 2. RAG 语义相似度匹配
+        if hasattr(self, '_tool_rag') and self._tool_rag:
+            try:
+                # 使用工具名作为查询，在向量库中找最相似的
+                results = self._tool_rag.search(tool_name, top_k=1)
+                if results:
+                    best_match = results[0]
+                    similarity = best_match.get('similarity', 0)
+                    matched_name = best_match.get('tool_name')
 
-        # 包含匹配
-        for name, t in self._tools_map.items():
-            if tool_name_lower in name.lower().replace(" ", "_").replace("-", "_"):
-                return t
+                    logger.info(f"【工具查找】RAG匹配: {tool_name} → {matched_name} (相似度: {similarity:.3f})")
 
+                    # 相似度高于阈值才使用
+                    if similarity >= settings.rag_tool_match_threshold:
+                        matched_tool = self._tools_map.get(matched_name)
+                        if matched_tool:
+                            return matched_tool
+                    else:
+                        logger.warning(f"【工具查找】RAG匹配相似度太低: {similarity:.3f} < {settings.rag_tool_match_threshold}")
+            except Exception as e:
+                logger.error(f"【工具查找】RAG匹配失败: {e}")
+
+        logger.error(f"【工具查找】未找到工具: {tool_name}")
         return None
 
     def _normalize_params(self, params: dict, tool) -> dict:

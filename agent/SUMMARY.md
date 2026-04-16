@@ -1,246 +1,329 @@
-# AI Agent 系统总结文档
+# AI Agent 系统技术文档
 
-## 1. 项目概述
+## 1. 系统概述
 
-本项目是一个基于 Langchain 框架的 AI Agent 系统，用于实现智能业务查询助手。系统通过意图识别、工具调用和 RAG（检索增强生成）技术，为用户提供订单、用户、库存等业务数据的智能查询服务。
+基于 LangChain + DeepSeek 的智能业务查询 Agent，支持意图识别、工具调用、RAG 增强检索。
 
 **技术栈：**
-- Python 3.x
-- Flask 3.0.0（API 服务）
-- LangChain >= 0.1.0（核心框架）
-- ChromaDB >= 0.4.0（向量数据库）
-- DeepSeek API（LLM 支持）
+- Python 3.x + Flask（API 服务）
+- LangChain（LCEL 链式调用）
+- ChromaDB（向量数据库）
+- DeepSeek API（LLM）
+- BGE Embedding（中文向量模型）
 
 ---
 
-## 2. 系统架构
+## 2. 架构图
 
 ```
-┌─────────────────────────────────────────────────────────────┐
-│                      Flask API Server                        │
-│  /api/chat  │  /api/tools/reload  │  /api/health            │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                     Flask API (:5001)                             │
+│     /api/chat  │  /api/tools/reload  │  /api/health            │
+└─────────────────────────────────────────────────────────────────┘
                               │
                               ▼
-┌─────────────────────────────────────────────────────────────┐
-│                    ReActAgent / AgentCore                    │
-│  ┌─────────┐  ┌─────────────┐  ┌──────────────┐            │
-│  │ Router  │  │ContextBuilder│  │ToolExecutor  │            │
-│  └─────────┘  └─────────────┘  └──────────────┘            │
-└─────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────┐
+│                    AgentOrchestrator                             │
+│  ┌─────────────┐  ┌──────────────┐  ┌──────────────────────┐   │
+│  │IntentChain  │  │ QueryChain   │  │ ChatChain            │   │
+│  │(意图识别)    │  │(查询/统计)   │  │(闲聊)                │   │
+│  └─────────────┘  └──────────────┘  └──────────────────────┘   │
+│                              │                                   │
+│  ┌─────────────────────────────────────────────────────────┐    │
+│  │  MemoryManager (对话记忆)                                 │    │
+│  └─────────────────────────────────────────────────────────┘    │
+└─────────────────────────────────────────────────────────────────┘
                               │
-          ┌───────────────────┼───────────────────┐
-          ▼                   ▼                   ▼
-┌─────────────────┐  ┌───────────────┐  ┌───────────────┐
-│  ToolRAG        │  │KnowledgeRAG  │  │MemoryManager  │
-│  (工具描述管理)  │  │(业务知识管理) │  │(记忆管理)     │
-└─────────────────┘  └───────────────┘  └───────────────┘
+         ┌────────────────────┼────────────────────┐
+         ▼                    ▼                    ▼
+┌─────────────────┐  ┌───────────────┐  ┌─────────────────────┐
+│    ToolRAG      │  │KnowledgeRAG  │  │ DynamicToolLoader   │
+│  (向量工具检索)  │  │(业务知识检索) │  │ (动态加载后端工具)   │
+└─────────────────┘  └───────────────┘  └─────────────────────┘
+         │                    │
+         ▼                    ▼
+┌─────────────────────────────────────────┐
+│         ChromaDB (.chroma/)             │
+│   tool_descriptions │ business_knowledge │
+└─────────────────────────────────────────┘
                               │
                               ▼
-          ┌───────────────────────────────────┐
-          │      Backend API (localhost:8080) │
-          │  OrderTool │ UserTool │ InventoryTool │
-          └───────────────────────────────────┘
+┌─────────────────────────────────────────┐
+│      Backend API (localhost:8080)       │
+│   /tools/order/query  │  /tools/user   │
+└─────────────────────────────────────────┘
 ```
 
 ---
 
-## 3. 核心模块
+## 3. 初始化流程
 
-### 3.1 Agent 核心 (`agent/core/agent.py`)
+### 3.1 启动入口 (`server.py`)
 
-| 类 | 说明 |
-|---|---|
-| `AgentCore` | 标准 Agent 引擎，处理用户对话、意图识别、工具调用 |
-| `ReActAgent` | 基于 ReAct 模式的 Agent，支持多轮推理迭代（默认3轮） |
+```python
+# 1. 配置日志
+logging.basicConfig(...)
 
-**核心流程：**
-1. 意图识别（Router.classify）
-2. 构建上下文（Tools + Knowledge + Memory + History）
-3. 路由分发（Chat / Tool Call）
-4. 更新记忆
+# 2. 初始化依赖
+orchestrator = initialize_dependencies()
 
-### 3.2 意图路由 (`agent/core/router.py`)
+# 3. 启动 Flask
+app.run(host='0.0.0.0', port=settings.agent_port)
+```
 
-| 意图类型 | 说明 | 触发场景 |
-|---|---|---|
-| `QUERY` | 查询具体数据 | 查询订单、用户、库存 |
-| `STATISTIC` | 统计汇总 | 计算总金额、数量、平均值 |
-| `CHAT` | 一般对话 | 问候、闲聊 |
-| `UNKNOWN` | 无法理解 | - |
+### 3.2 依赖初始化 (`dependencies.py`)
 
-**路由策略：**
-- 有 DeepSeek API Key：使用 LLM 进行意图分类
-- 无 API Key：基于规则的关键词匹配
-
-### 3.3 上下文构建 (`agent/core/context_builder.py`)
-
-负责构建 LLM 所需的完整 Prompt，包含：
-- 系统提示词
-- 可用工具描述
-- 业务知识
-- 记忆上下文
-- 对话历史
-
-### 3.4 工具执行器 (`agent/core/tool_executor.py`)
-
-`SyncToolExecutor` 类负责：
-- 从后端动态加载可用工具列表
-- 注册 Python 工具类（OrderTool、UserTool、InventoryTool）
-- 执行工具调用并记录日志
-- 异常处理与结果封装
-
----
-
-## 4. RAG 模块
-
-### 4.1 ToolRAG (`agent/rag/tool_rag.py`)
-
-工具描述管理，提供：
-- 从后端 `/tools` 接口加载工具描述
-- 解析 actions、params 等工具元数据
-- 构建可供 LLM 理解的工具说明文本
-
-### 4.2 KnowledgeRAG (`agent/rag/knowledge_rag.py`)
-
-业务知识管理，内置知识包括：
-- 订单状态：`pending`、`paid`、`shipped`、`completed`、`cancelled`
-- 会员等级：`normal`、`silver`、`gold`、`vip`
-- 查询参数说明：金额范围、日期范围等
+```
+initialize_dependencies()
+│
+├── 1. create_chat_model()
+│   └── ChatOpenAI (DeepSeek)
+│
+├── 2. ConversationMemoryManager
+│   └── max_token_limit: 2000
+│
+├── 3. create_all_tools()
+│   ├── DynamicToolLoader.fetch_tool_definitions()
+│   └── StructuredTool.from_function() × N
+│
+├── 4. get_embedding_model()
+│   └── BAAI/bge-small-zh-v1.5 (512维)
+│
+├── 5. ToolRAG.load_tools()
+│   └── ChromaDB: tool_descriptions collection
+│
+├── 6. KnowledgeRAG.load_knowledge()
+│   └── ChromaDB: business_knowledge collection
+│
+├── 7. create_intent_chain()
+│   └── prompt | llm | JsonOutputParser
+│
+├── 8. create_query_chain()
+│   └── prompt | llm | StrOutputParser
+│
+├── 9. create_chat_chain()
+│   └── prompt | llm | StrOutputParser
+│
+└── 10. AgentOrchestrator
+    ├── set_tools()
+    ├── set_tool_rag()
+    └── set_knowledge_rag()
+```
 
 ---
 
-## 5. 记忆管理 (`agent/memory/memory_manager.py`)
+## 4. 执行流程
 
-| 类 | 说明 |
-|---|---|
-| `MemoryManager` | 短期记忆管理器，基于 `deque` 实现，支持设置最大容量 |
-| `WorkingMemory` | 工作记忆，存储当前任务的工具调用状态 |
-| `Turn` | 对话轮次，记录用户输入、助手响应、工具调用 |
+### 4.1 用户请求处理
+
+```
+POST /api/chat
+    │
+    ▼
+orchestrator.process(message, userId)
+    │
+    ├─ 1. 意图识别
+    │   intent_chain.invoke({user_input})
+    │   │
+    │   └── 返回: Intent{intent: "query|statistic|chat|unknown"}
+    │
+    ├─ 2. 路由分发
+    │   │
+    │   ├─ [query/statistic] → QueryChain
+    │   │   │
+    │   │   ├─ _get_rag_context()
+    │   │   │   ├── tool_rag.search() → 相关工具
+    │   │   │   └── knowledge_rag.get_relevant_knowledge() → 业务知识
+    │   │   │
+    │   │   ├─ query_chain.invoke({input, chat_history, rag_context})
+    │   │   │   └── LLM 返回 JSON: {need_tool, tool, params, answer}
+    │   │   │
+    │   │   ├─ _parse_llm_json()
+    │   │   │
+    │   │   └─ need_tool=true?
+    │   │       │
+    │   │       ├─ YES: _execute_tool()
+    │   │       │   ├── _find_tool() (模糊匹配)
+    │   │       │   ├── _normalize_params() (user_id ↔ userId)
+    │   │       │   ├── tool.invoke() → 后端 API
+    │   │       │   └── _polish_result() → LLM 润色
+    │   │       │
+    │   │       └─ NO: 返回 answer
+    │   │
+    │   └─ [chat] → ChatChain
+    │       │
+    │       └── chat_chain.invoke({input, chat_history})
+    │
+    └─ 3. 更新记忆
+        │
+        ├── memory_manager.add_user_message()
+        └── memory_manager.add_ai_message()
+```
+
+### 4.2 详细步骤
+
+#### 步骤 1: 意图识别
+```python
+intent_result = intent_chain.invoke({"user_input": user_input})
+# LLM 返回: {"intent": "query", "reason": "用户查询订单数据"}
+```
+
+#### 步骤 2a: Query/Statistic 流程
+```python
+# RAG 检索
+rag_context = _get_rag_context(user_input)
+# 返回:
+# 【相关工具】（按相似度排序）：
+#   - query_order_list: 查询订单列表 (匹配度: 0.85)
+#
+# 【相关业务知识】：
+#   订单状态：pending(待处理), shipped(已发货)...
+
+# 调用 QueryChain
+raw_response = query_chain.invoke({
+    "input": user_input,
+    "chat_history": memory,
+    "rag_context": rag_context
+})
+# LLM 返回 JSON:
+# {"need_tool": true, "tool": "query_order_list", "params": {"userId": "U001"}}
+```
+
+#### 步骤 2b: 工具执行
+```python
+# 执行工具
+tool_result = _execute_tool("query_order_list", {"userId": "U001"})
+# 1. _find_tool() - 模糊匹配工具名
+# 2. _normalize_params() - 参数名规范化
+# 3. tool.invoke() - 调用后端 API
+# 4. _polish_result() - LLM 润色结果
+```
+
+#### 步骤 3: 更新记忆
+```python
+memory_manager.add_user_message(user_input)
+memory_manager.add_ai_message(response)
+```
 
 ---
 
-## 6. 业务工具 (`agent/tools/`)
+## 5. 模块说明
 
-### 6.1 OrderTool (`order_tool.py`)
+### 5.1 配置 (`config/`)
 
-| Action | 说明 | 参数 |
-|---|---|---|
-| `query_order_list` | 查询订单列表 | `userId`, `status`, `minAmount`, `maxAmount`, `startDate`, `endDate` |
-| `query_order_detail` | 查询订单详情 | `orderNo` |
-| `query_order_statistics` | 查询订单统计 | `userId`, `minAmount`, `maxAmount` |
+| 文件 | 说明 |
+|------|------|
+| `settings.yml` | 主配置（LLM、Backend、Agent、Memory）|
+| `rag.yml` | RAG 配置（Embedding、ChromaDB、检索阈值）|
+| `tools.yml` | 工具配置（HTTP 超时）|
+| `prompts.yml` | Prompt 模板 |
+| `loader.py` | YAML 配置加载器 |
 
-### 6.2 UserTool (`user_tool.py`)
+### 5.2 Chains (`chains/`)
 
-| Action | 说明 | 参数 |
-|---|---|---|
-| `query_user_info` | 查询用户信息 | `userId` |
+| 文件 | 说明 |
+|------|------|
+| `orchestrator.py` | Agent 编排器，统一调度 |
+| `intent_chain.py` | 意图识别链 |
+| `query_chain.py` | 查询/统计链 |
+| `chat_chain.py` | 闲聊链 |
 
-### 6.3 InventoryTool (`inventory_tool.py`)
+### 5.3 RAG (`rag/`)
 
-| Action | 说明 | 参数 |
-|---|---|---|
-| `query_inventory` | 按 SKU 查询库存 | `sku` |
-| `query_warehouse_stock` | 按仓库查询库存 | `warehouse` |
+| 文件 | 说明 |
+|------|------|
+| `embeddings.py` | Embedding 模型管理（BGE + OpenAI fallback）|
+| `tool_rag.py` | 工具向量检索 |
+| `knowledge_rag.py` | 业务知识检索 |
+
+### 5.4 工具 (`tools/`)
+
+| 文件 | 说明 |
+|------|------|
+| `dynamic_loader.py` | 动态工具加载器 |
+| `base.py` | 工具基类 |
+| `order_tool.py` | 订单工具（备用）|
+| `user_tool.py` | 用户工具（备用）|
+| `inventory_tool.py` | 库存工具（备用）|
 
 ---
 
-## 7. API 接口 (`agent/server.py`)
+## 6. API 接口
 
 | 端点 | 方法 | 说明 |
-|---|---|---|
-| `/api/chat` | POST | 处理用户对话请求 |
+|------|------|------|
+| `/api/chat` | POST | 处理对话请求 |
 | `/api/tools/reload` | POST | 重新加载工具 |
 | `/api/health` | GET | 健康检查 |
 
-**Chat 接口请求格式：**
+### Chat 请求格式
 ```json
 {
-  "message": "用户问题",
-  "userId": "U001",
-  "sessionId": "session_123"
+  "message": "帮我查一下 U001 的订单",
+  "userId": "U001"
 }
 ```
 
-**响应格式：**
+### 响应格式
 ```json
 {
   "success": true,
-  "response": "Agent 回复内容"
+  "response": "好的，我已经为您查到..."
 }
 ```
 
 ---
 
-## 8. 配置与依赖
+## 7. 配置项
 
-### 8.1 环境变量
+### settings.yml
+```yaml
+deepseek:
+  api_key: "${DEEPSEEK_API_KEY}"
+  base_url: "https://api.deepseek.com"
+  model: "deepseek-chat"
+  temperature: 0.7
 
-| 变量 | 说明 | 默认值 |
-|---|---|---|
-| `DEEPSEEK_API_KEY` | DeepSeek API 密钥 | - |
-| `DEEPSEEK_BASE_URL` | DeepSeek API 地址 | `https://api.deepseek.com` |
-| `BACKEND_URL` | 后端服务地址 | `http://localhost:8080` |
-| `PORT` | Flask 服务端口 | `5001` |
+backend:
+  url: "http://localhost:8080"
+  timeout: 30
 
-### 8.2 依赖 (`requirements.txt`)
+agent:
+  port: 5001
 
+memory:
+  max_token_limit: 2000
 ```
-requests==2.31.0
-flask==3.0.0
-langchain>=0.1.0
-chromadb>=0.4.0
+
+### rag.yml
+```yaml
+embedding:
+  model: "BAAI/bge-small-zh-v1.5"
+  dimension: 512
+  cache_dir: ".hf_cache"
+
+chroma:
+  persist_directory: ".chroma"
+
+retrieval:
+  tool_top_k: 3
+  tool_similarity_threshold: 0.5
+  knowledge_top_k: 3
+  knowledge_similarity_threshold: 0.3
 ```
 
 ---
 
-## 9. 关键设计
-
-### 9.1 ReAct 模式
-
-ReActAgent 在 `_handle_tool_call` 中实现多轮推理：
-- 迭代次数：默认 3 次
-- 每轮包含：分析 → 工具调用 → 结果处理
-- 若 LLM 返回 `tool: null`，表示已有足够信息，直接返回分析结果
-
-### 9.2 工具动态加载
-
-ToolExecutor 在初始化时：
-1. 调用后端 `/tools` 接口获取可用工具列表
-2. 根据 `enabled` 标志动态注册对应的 Python 工具类
-3. 支持运行时通过 `/api/tools/reload` 刷新工具列表
-
-### 9.3 会话管理
-
-MemoryManager 以 `session_id` 为键管理多会话：
-- 短期记忆：基于 `deque`，默认最多 20 轮
-- 支持 `user_id` 关联
-- `get_recent_context(k)` 获取最近 k 轮对话
-
----
-
-## 10. Git 提交历史
-
-| Commit | 说明 |
-|---|---|
-| `5cf1df8` | 配置文件修改 |
-| `dab7a25` | fix: 完善 ReAct Agent 推理流程与动态工具加载 |
-| `2ffaaf7` | feat: 完成 AI Agent 系统架构 |
-
----
-
-## 11. 启动方式
+## 8. 启动方式
 
 ```bash
-# 安装依赖
-pip install -r requirements.txt
+cd agent
 
 # 设置环境变量
-export DEEPSEEK_API_KEY="your-api-key"
-export BACKEND_URL="http://localhost:8080"
+export DEEPSEEK_API_KEY="your-key"
 
 # 启动服务
-python -m agent.server
+python server.py
 ```
 
-服务默认运行在 `http://0.0.0.0:5001`
+服务运行在 `http://0.0.0.0:5001`

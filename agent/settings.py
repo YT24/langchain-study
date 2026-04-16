@@ -46,6 +46,7 @@ class Settings:
         self.embedding_dimension = get_config("rag.yml", "embedding", "dimension", default=512)
         self.chroma_persist_directory = os.path.join(base_dir, get_config("rag.yml", "chroma", "persist_directory", default=".chroma"))
         self.rag_similarity_threshold = get_config("rag.yml", "retrieval", "tool_similarity_threshold", default=0.5)
+        self.rag_tool_match_threshold = get_config("rag.yml", "retrieval", "tool_match_threshold", default=0.4)
         self.rag_top_k_tools = get_config("rag.yml", "retrieval", "tool_top_k", default=3)
         self.rag_top_k_knowledge = get_config("rag.yml", "retrieval", "knowledge_top_k", default=3)
 
