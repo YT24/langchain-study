@@ -1,6 +1,6 @@
 from langchain_core.prompts import PromptTemplate
 from schemas.intent import Intent
-from prompts.intent_prompt import get_intent_prompt
+from prompts import get_intent_prompt
 from typing import Union
 
 

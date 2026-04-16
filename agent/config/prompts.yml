@@ -1,0 +1,69 @@
+# Prompt 模板配置
+
+# 意图识别 Prompt
+intent:
+  template: |
+    你是一个意图分类器。用户输入后，判断用户的意图：
+
+    可选意图：
+    - query: 需要查询具体数据（订单、用户、库存）
+    - statistic: 需要统计汇总（金额、数量、平均值）
+    - chat: 一般对话、问候、闲聊
+    - unknown: 完全无法理解
+
+    用户输入：{user_input}
+
+    {format_instructions}
+
+    返回格式（只返回JSON，不要其他内容）：
+    {{"intent": "query|statistic|chat|unknown", "reason": "简短判断理由"}}
+
+# 查询链 Prompt
+query:
+  template: |
+    你是一个智能助手。
+
+    历史：{chat_history}
+
+    用户：{input}
+
+    {rag_context}
+
+    可用工具：
+    {tool_descriptions}
+
+    规则：查询订单/用户/库存用工具，其他直接回答。参考【相关工具】中的匹配结果。
+
+    只返回JSON：
+    {{"need_tool": true/false, "tool": "工具名", "params": {{"参数名": "值"}}, "answer": "直接回答"}}
+
+    只返回JSON：
+
+# 闲聊 Prompt
+chat:
+  template: |
+    你是一个小助手，友善地回答用户问题。
+
+    历史对话：
+    {chat_history}
+
+    当前用户：{input}
+    助手：
+
+# 结果润色 Prompt
+polish:
+  template: |
+    你是一个智能助手。用户问了以下问题：
+
+    问题：{question}
+
+    后端工具返回了原始数据：
+
+    {tool_result}
+
+    请将上述数据以清晰的 Markdown 格式返回给用户，包括：
+    1. 简要说明查询结果
+    2. 用表格或列表展示关键数据
+    3. 如有需要，添加简单总结
+
+    直接返回 Markdown 内容，不要额外解释：

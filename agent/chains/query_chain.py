@@ -14,7 +14,7 @@ def create_query_chain(llm, tools: List[Tool], memory, tool_rag=None, knowledge_
     """
     from langchain_core.output_parsers.string import StrOutputParser
     from langchain_core.prompts import PromptTemplate
-    from prompts.query_prompt import QUERY_TEMPLATE
+    from prompts import QUERY_TEMPLATE
 
     # 基础工具描述
     tool_descriptions = "\n".join([

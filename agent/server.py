@@ -23,7 +23,7 @@ app = Flask(__name__)
 # 初始化全局编排器
 logger.info("正在初始化 Agent...")
 orchestrator = initialize_dependencies()
-logger.info("Agent 初始化完成")
+logger.info("初始化完成 Agent...")
 
 
 @app.route('/api/chat', methods=['POST'])
@@ -39,7 +39,8 @@ def chat():
     try:
         logger.info(f"【收到请求】用户ID: {user_id}, 消息: {message[:100]}")
         response = orchestrator.process(message, user_id=user_id)
-        logger.info(f"【返回响应】类型: {type(response).__name__}, 内容: {str(response)[:100]}")
+        logger.info(f"【返回响应】类型: {type(response).__name__}")
+        logger.info(f"【返回响应】内容: {str(response)[:100]}")
         return jsonify({'success': True, 'response': response})
     except Exception as e:
         logger.error(f"【处理失败】错误: {str(e)}")
