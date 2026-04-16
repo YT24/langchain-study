@@ -60,6 +60,7 @@ public class SecurityConfig {
                     AntPathRequestMatcher.antMatcher("/tools"),
                     AntPathRequestMatcher.antMatcher("/tools/**")
                 ).permitAll()
+                .requestMatchers(org.springframework.http.HttpMethod.OPTIONS, "/**").permitAll()
                 .anyRequest().authenticated()
             )
             .addFilterBefore(jwtAuthFilter(), UsernamePasswordAuthenticationFilter.class);

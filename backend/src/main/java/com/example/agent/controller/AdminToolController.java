@@ -80,6 +80,19 @@ public class AdminToolController {
     @PostMapping("/actions")
     public ApiResponse<SysToolAction> createAction(@RequestBody SysToolAction action) {
         action.setId(null);
+        // 空字符串转为 null
+        if (action.getRequestParams() != null && action.getRequestParams().isEmpty()) {
+            action.setRequestParams(null);
+        }
+        if (action.getResponseParams() != null && action.getResponseParams().isEmpty()) {
+            action.setResponseParams(null);
+        }
+        if (action.getExampleRequest() != null && action.getExampleRequest().isEmpty()) {
+            action.setExampleRequest(null);
+        }
+        if (action.getExampleResponse() != null && action.getExampleResponse().isEmpty()) {
+            action.setExampleResponse(null);
+        }
         actionMapper.insert(action);
         return ApiResponse.success(action);
     }
@@ -87,6 +100,19 @@ public class AdminToolController {
     @PutMapping("/actions/{id}")
     public ApiResponse<SysToolAction> updateAction(@PathVariable Long id, @RequestBody SysToolAction action) {
         action.setId(id);
+        // 空字符串转为 null，避免 JSON 字段报错
+        if (action.getRequestParams() != null && action.getRequestParams().isEmpty()) {
+            action.setRequestParams(null);
+        }
+        if (action.getResponseParams() != null && action.getResponseParams().isEmpty()) {
+            action.setResponseParams(null);
+        }
+        if (action.getExampleRequest() != null && action.getExampleRequest().isEmpty()) {
+            action.setExampleRequest(null);
+        }
+        if (action.getExampleResponse() != null && action.getExampleResponse().isEmpty()) {
+            action.setExampleResponse(null);
+        }
         actionMapper.updateById(action);
         return ApiResponse.success(actionMapper.selectById(id));
     }
@@ -96,6 +122,7 @@ public class AdminToolController {
         actionMapper.deleteById(id);
         return ApiResponse.success(null);
     }
+
 
     // ========== 分类管理 ==========
 

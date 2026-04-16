@@ -7,12 +7,10 @@ export default defineConfig({
     port: 3000,
     cors: true,
     proxy: {
-      // AI 对话 - Python 服务
       '/api/chat': {
         target: 'http://localhost:5001',
         changeOrigin: true
       },
-      // 后端 API 代理
       '/api': {
         target: 'http://localhost:8080',
         changeOrigin: true

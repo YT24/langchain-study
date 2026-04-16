@@ -77,16 +77,18 @@ export default function Layout() {
               </h1>
               <p className="page-subtitle">{current.subtitle}</p>
             </div>
-            <div className="header-right">
-              <div className="user-info">
-                <span className="user-avatar">{user?.nickname?.[0] || 'U'}</span>
-                <span className="user-name">{user?.nickname || user?.username || '用户'}</span>
-              </div>
-              <button className="logout-btn" onClick={handleLogout}>
-                退出
-              </button>
-            </div>
           </header>
+
+          {/* 右上角用户信息 */}
+          <div className="header-right">
+            <div className="user-info">
+              <span className="user-avatar">{user?.nickname?.[0] || 'U'}</span>
+              <span className="user-name">{user?.nickname || user?.username || '用户'}</span>
+            </div>
+            <button className="logout-btn" onClick={handleLogout}>
+              退出
+            </button>
+          </div>
 
           <div style={{ flex: 1, overflow: 'hidden', display: 'flex', flexDirection: 'column' }}>
             {currentPage === 'agent' && <ChatInterface />}
@@ -97,9 +99,13 @@ export default function Layout() {
 
       <style>{`
         .header-right {
+          position: fixed;
+          top: 20px;
+          right: 24px;
           display: flex;
           align-items: center;
           gap: 16px;
+          z-index: 100;
         }
 
         .user-info {
