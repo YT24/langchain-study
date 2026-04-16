@@ -86,7 +86,7 @@ def health():
 
 
 if __name__ == '__main__':
-    from config import get_settings
+    from settings import get_settings
     settings = get_settings()
     app.run(
         host='0.0.0.0',

@@ -1,7 +1,6 @@
-from typing import Optional
-import logging
 import json
-import re
+import logging
+from typing import Optional
 
 logger = logging.getLogger(__name__)
 
@@ -149,24 +148,32 @@ class AgentOrchestrator:
         return ""
 
     def _execute_tool(self, tool_name: str, params: dict) -> str:
-        """执行工具"""
-        logger.info(f"【工具执行】准备执行 {tool_name}，参数: {params}")
+        """执行工具（带详细日志）"""
+        logger.info("=" * 60)
+        logger.info(f"【工具调用】>>> 开始调用工具: {tool_name}")
+        logger.info(f"【工具调用】    请求参数: {params}")
 
         tool = self._find_tool(tool_name)
         if not tool:
             available = list(self._tools_map.keys())
+            logger.error(f"【工具调用】!!! 工具未找到: {tool_name}")
             return f"错误：未找到工具 '{tool_name}'，可用工具: {available}"
 
         # 规范化参数名
         params = self._normalize_params(params, tool)
-        logger.info(f"【工具执行】规范化后参数: {params}")
+        logger.info(f"【工具调用】    规范化参数: {params}")
 
         try:
+            logger.info(f"【工具调用】    正在执行...")
             result = tool.invoke(params)
-            logger.info(f"【工具执行】{tool_name} 执行成功")
+            result_preview = str(result)[:500] + "..." if len(str(result)) > 500 else str(result)
+            logger.info(f"【工具调用】<<< 工具执行成功")
+            logger.info(f"【工具调用】    返回结果: {result_preview}")
+            logger.info("=" * 60)
             return result
         except Exception as e:
-            logger.error(f"【工具执行】{tool_name} 执行失败: {e}")
+            logger.error(f"【工具调用】!!! 工具执行异常: {e}")
+            logger.info("=" * 60)
             return f"工具执行失败: {str(e)}"
 
     def _polish_result(self, tool_result: str, user_question: str) -> str:

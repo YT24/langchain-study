@@ -125,7 +125,7 @@ def {safe_name}({', '.join(param_with_defaults)}) -> str:
 
         if result.get('success'):
             data = result.get('data', [])
-            logger.info(f'【动态工具调用】{name} 成功 | 返回数据: {{str(data)[:200]}}')
+            logger.info(f'【动态工具调用】{name} 成功 | 返回数据: {{str(data)}}')
             return json.dumps(data, ensure_ascii=False)
         else:
             msg = result.get('message', '未知错误')
