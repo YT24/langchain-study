@@ -419,21 +419,36 @@ export default function ToolManagement() {
           flex: 1;
           max-width: 300px;
           padding: 10px 16px;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.15);
           border-radius: 8px;
           color: #fff;
           font-size: 14px;
         }
 
+        .search-input::placeholder {
+          color: rgba(255, 255, 255, 0.5);
+        }
+
         .category-select {
-          padding: 10px 16px;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          padding: 10px 32px 10px 16px;
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.15);
           border-radius: 8px;
           color: #fff;
           font-size: 14px;
           min-width: 150px;
+          cursor: pointer;
+          appearance: none;
+          background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='12' viewBox='0 0 12 12'%3E%3Cpath fill='%23a0a0b0' d='M6 8L1 3h10z'/%3E%3C/svg%3E");
+          background-repeat: no-repeat;
+          background-position: right 12px center;
+        }
+
+        .category-select option {
+          background: #1a1a2e;
+          color: #fff;
+          padding: 8px;
         }
 
         .tool-actions {
@@ -478,8 +493,8 @@ export default function ToolManagement() {
         }
 
         .tool-card {
-          background: rgba(255, 255, 255, 0.03);
-          border: 1px solid rgba(255, 255, 255, 0.08);
+          background: rgba(255, 255, 255, 0.05);
+          border: 1px solid rgba(255, 255, 255, 0.1);
           border-radius: 12px;
           padding: 16px;
           transition: all 0.3s ease;
@@ -626,7 +641,8 @@ export default function ToolManagement() {
           left: 0;
           right: 0;
           bottom: 0;
-          background: rgba(0, 0, 0, 0.7);
+          background: rgba(0, 0, 0, 0.6);
+          backdrop-filter: blur(4px);
           display: flex;
           align-items: center;
           justify-content: center;
@@ -634,13 +650,13 @@ export default function ToolManagement() {
         }
 
         .modal {
-          background: #1e1e2e;
+          background: var(--bg-secondary);
           border-radius: 16px;
           width: 90%;
           max-width: 500px;
           max-height: 80vh;
           overflow-y: auto;
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          border: 1px solid var(--border-subtle);
         }
 
         .modal-header {
@@ -689,8 +705,8 @@ export default function ToolManagement() {
         .form-group textarea {
           width: 100%;
           padding: 10px 14px;
-          background: rgba(255, 255, 255, 0.05);
-          border: 1px solid rgba(255, 255, 255, 0.1);
+          background: rgba(255, 255, 255, 0.08);
+          border: 1px solid rgba(255, 255, 255, 0.15);
           border-radius: 8px;
           color: #fff;
           font-size: 14px;
@@ -701,7 +717,12 @@ export default function ToolManagement() {
         .form-group select:focus,
         .form-group textarea:focus {
           outline: none;
-          border-color: #6366f1;
+          border-color: var(--accent-primary);
+        }
+
+        .form-group select option {
+          background: #1a1a2e;
+          color: #fff;
         }
 
         .form-group input:disabled {

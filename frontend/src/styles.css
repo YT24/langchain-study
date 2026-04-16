@@ -8,33 +8,33 @@
 
 /* CSS Variables */
 :root {
-  /* Colors - Deep Intelligence Palette */
-  --bg-primary: #0a0a0f;
-  --bg-secondary: #12121a;
-  --bg-tertiary: #1a1a24;
-  --bg-elevated: #22222e;
-  --bg-glass: rgba(26, 26, 36, 0.8);
+  /* Colors - Lighter Modern Palette */
+  --bg-primary: #1a1a2e;
+  --bg-secondary: #16213e;
+  --bg-tertiary: #1f2b47;
+  --bg-elevated: #2a3a5c;
+  --bg-glass: rgba(26, 26, 46, 0.95);
 
   --accent-primary: #00d4aa;
   --accent-secondary: #00a884;
   --accent-glow: rgba(0, 212, 170, 0.3);
-  --accent-subtle: rgba(0, 212, 170, 0.1);
+  --accent-subtle: rgba(0, 212, 170, 0.15);
 
   --text-primary: #f0f0f5;
-  --text-secondary: #a0a0b0;
-  --text-muted: #606070;
+  --text-secondary: #b0b0c0;
+  --text-muted: #707080;
 
-  --border-subtle: rgba(255, 255, 255, 0.08);
-  --border-accent: rgba(0, 212, 170, 0.3);
+  --border-subtle: rgba(255, 255, 255, 0.12);
+  --border-accent: rgba(0, 212, 170, 0.4);
 
   --success: #00d4aa;
   --warning: #ffb347;
   --error: #ff6b6b;
 
   /* Shadows */
-  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.3);
-  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.4);
-  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.5);
+  --shadow-sm: 0 2px 8px rgba(0, 0, 0, 0.2);
+  --shadow-md: 0 4px 16px rgba(0, 0, 0, 0.25);
+  --shadow-lg: 0 8px 32px rgba(0, 0, 0, 0.3);
   --shadow-glow: 0 0 40px var(--accent-glow);
 
   /* Typography */
