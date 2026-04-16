@@ -25,6 +25,7 @@ export default function LoginPage() {
       if (res.success) {
         localStorage.setItem('token', res.data.token)
         localStorage.setItem('user', JSON.stringify({
+          userId: res.data.userId,
           username: res.data.username,
           nickname: res.data.nickname,
           role: res.data.role

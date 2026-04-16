@@ -49,7 +49,7 @@ public class AuthController {
         userMapper.updateById(user);
 
         String token = jwtUtils.generateToken(user.getId(), user.getUsername(), user.getRole());
-        return ApiResponse.success(new LoginResponse(token, user.getUsername(), user.getNickname(), user.getRole(), expiration));
+        return ApiResponse.success(new LoginResponse(user.getId(), token, user.getUsername(), user.getNickname(), user.getRole(), expiration));
     }
 
     @PostMapping("/register")
@@ -70,7 +70,7 @@ public class AuthController {
         userMapper.insert(user);
 
         String token = jwtUtils.generateToken(user.getId(), user.getUsername(), user.getRole());
-        return ApiResponse.success(new LoginResponse(token, user.getUsername(), user.getNickname(), user.getRole(), expiration));
+        return ApiResponse.success(new LoginResponse(user.getId(), token, user.getUsername(), user.getNickname(), user.getRole(), expiration));
     }
 
     @GetMapping("/me")

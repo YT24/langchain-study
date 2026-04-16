@@ -53,7 +53,7 @@ export const updateAction = (id, data) => api.put(`/admin/tools/actions/${id}`, 
 export const deleteAction = (id) => api.delete(`/admin/tools/actions/${id}`)
 
 // ========== AI 对话 ==========
-export const sendChatMessage = (message) => api.post('/chat', { message })
+export const sendChatMessage = (message, userId) => api.post('/chat', { message, userId })
 export const sendMessage = sendChatMessage
 
 export default api

@@ -25,7 +25,9 @@ export default function ChatInterface() {
     setLoading(true)
 
     try {
-      const result = await sendMessage(userMessage)
+      const user = JSON.parse(localStorage.getItem('user') || '{}')
+      const userId = user.userId
+      const result = await sendMessage(userMessage, userId)
       if (result.success) {
         setMessages(prev => [...prev, {
           role: 'assistant',
