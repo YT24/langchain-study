@@ -37,7 +37,8 @@ def chat():
         return jsonify({'success': False, 'message': '消息不能为空'}), 400
 
     try:
-        logger.info(f"【收到请求】用户ID: {user_id}, 消息: {message[:100]}")
+        logger.info(f"【收到请求】用户ID: {user_id}")
+        logger.info(f"【收到请求】消息: {message[:100]}")
         response = orchestrator.process(message, user_id=user_id)
         logger.info(f"【返回响应】类型: {type(response).__name__}")
         logger.info(f"【返回响应】内容: {str(response)[:100]}")

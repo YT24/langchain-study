@@ -11,3 +11,8 @@ loading:
   api_endpoint: "/tools/actions"
   # 验证工具可用性
   validate_on_load: true
+
+# 工具匹配配置
+matching:
+  # RAG 语义匹配阈值（低于此值不匹配）
+  rag_threshold: 0.4
