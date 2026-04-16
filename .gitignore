@@ -84,6 +84,8 @@ agent/vector_store/
 agent/__pycache__/
 agent/*.pyc
 agent/.env
+agent/.chroma/
+agent/.hf_cache/
 
 # Environment
 .env
