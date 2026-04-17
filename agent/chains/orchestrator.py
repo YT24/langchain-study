@@ -2,7 +2,88 @@ import json
 import logging
 from typing import Optional, Dict, List, Any
 
+from agent.chains.renderers import render_tool_result
+from agent.chains.validators import normalize_tool_params, validate_required_params
+from agent.schemas.tool_decision import ToolDecision
+
 logger = logging.getLogger(__name__)
+
+
+GREETING_TOKENS = ("你好", "hello", "hi")
+SAFE_LOG_LENGTH = 120
+
+
+def redact_for_log(value: Any, max_length: int = SAFE_LOG_LENGTH) -> str:
+    text = str(value)
+    replacements = {
+        "userId=": "userId=***",
+        "user_id=": "user_id=***",
+        "orderNo=": "orderNo=***",
+        "order_no=": "order_no=***",
+    }
+    for target, replacement in replacements.items():
+        if target in text:
+            start = text.index(target) + len(target)
+            end = start
+            while end < len(text) and not text[end].isspace() and text[end] not in ',;':
+                end += 1
+            text = text[:text.index(target)] + replacement + text[end:]
+    return text[:max_length] + "..." if len(text) > max_length else text
+
+
+def summarize_for_log(value: Any, max_length: int = SAFE_LOG_LENGTH) -> str:
+    return redact_for_log(value, max_length=max_length)
+
+
+def is_greeting(text: str) -> bool:
+    lowered = text.lower()
+    return any(token in lowered for token in GREETING_TOKENS)
+
+
+def should_fallback_to_chat(text: str) -> bool:
+    return is_greeting(text)
+
+
+def resolve_intent_type(intent_result, user_input: str) -> str:
+    if isinstance(intent_result, dict):
+        intent = intent_result.get("intent")
+        reason = intent_result.get("reason", "")
+        if intent:
+            logger.info(f"【意图识别】类型: {intent}, 原因: {reason}")
+            return intent
+
+    intent_obj = intent_result if hasattr(intent_result, 'intent') else None
+    if intent_obj:
+        logger.info(f"【意图识别】类型: {intent_obj.intent}, 原因: {intent_obj.reason}")
+        return intent_obj.intent
+
+    fallback_intent = "chat" if should_fallback_to_chat(user_input) else "unknown"
+    logger.warning(f"【意图识别】解析失败，使用兜底分类: {fallback_intent}")
+    return fallback_intent
+
+
+def coerce_tool_decision(raw_response) -> Optional[ToolDecision]:
+    if isinstance(raw_response, ToolDecision):
+        return raw_response
+    if isinstance(raw_response, dict):
+        payload = raw_response
+    else:
+        if not isinstance(raw_response, str):
+            raw_response = str(raw_response)
+        text = raw_response.strip()
+        start = text.find('{')
+        end = text.rfind('}')
+        if start == -1 or end == -1 or end <= start:
+            return None
+        try:
+            payload = json.loads(text[start:end + 1])
+        except json.JSONDecodeError:
+            return None
+    try:
+        return ToolDecision.model_validate(payload)
+    except Exception as e:
+        logger.warning(f"【决策解析】结构化校验失败: {e}")
+        return None
 
 
 class AgentOrchestrator:
@@ -26,6 +107,7 @@ class AgentOrchestrator:
         self._knowledge_rag = None
         self._memory_rag = None  # 长期记忆 RAG
         self._query_cache: Dict[str, Any] = {}  # 请求级缓存
+        self._query_embedding_cache: Dict[str, List[float]] = {}
 
     def set_tools(self, tools):
         """设置可用工具（由 dependencies.py 调用）"""
@@ -81,18 +163,40 @@ class AgentOrchestrator:
         scored_tools.sort(key=lambda x: x["similarity"], reverse=True)
         return scored_tools[:top_k]
 
-    def _search_all_rag(self, query: str, user_id: Optional[str] = None) -> Dict[str, Any]:
-        """合并 RAG 检索（工具 + 知识 + 长期记忆）- 一次 embedding 计算
+    def _get_query_embedding(self, query: str) -> Optional[List[float]]:
+        if query in self._query_embedding_cache:
+            return self._query_embedding_cache[query]
 
-        使用请求级缓存避免重复计算
+        embedding_manager = None
+        if self._tool_rag and hasattr(self._tool_rag, "embedding_manager"):
+            embedding_manager = self._tool_rag.embedding_manager
+        elif self._knowledge_rag and hasattr(self._knowledge_rag, "embedding_manager"):
+            embedding_manager = self._knowledge_rag.embedding_manager
+        elif self._memory_rag and hasattr(self._memory_rag, "embedding_manager"):
+            embedding_manager = self._memory_rag.embedding_manager
+
+        if not embedding_manager:
+            return None
+
+        try:
+            query_embedding = embedding_manager.embed_query(query)
+            self._query_embedding_cache[query] = query_embedding
+            return query_embedding
+        except Exception as e:
+            logger.warning(f"【RAG检索】query embedding 计算失败: {e}")
+            return None
+
+    def _search_all_rag(self, query: str, user_id: Optional[str] = None) -> Dict[str, Any]:
+        """合并 RAG 检索（工具 + 知识）
+
+        使用请求级缓存避免重复计算；长期记忆仍在 _get_rag_context 中单独处理。
         """
-        # 缓存键包含 query 和 user_id（长期记忆与用户相关）
         cache_key = f"{user_id or '_'}:{query}"
         if cache_key in self._query_cache:
             logger.info("【RAG检索】使用缓存结果")
             return self._query_cache[cache_key]
 
-        from settings import get_settings
+        from agent.settings import get_settings
         settings = get_settings()
 
         result = {
@@ -100,29 +204,31 @@ class AgentOrchestrator:
             "knowledge": "",
             "error": None
         }
+        query_embedding = self._get_query_embedding(query)
 
-        # 1. Tool RAG 检索（带关键词降级）
         if hasattr(self, '_tool_rag') and self._tool_rag:
             try:
-                tools = self._tool_rag.search(query, top_k=settings.rag_top_k_tools)
+                if query_embedding is not None and hasattr(self._tool_rag, "search_by_embedding"):
+                    tools = self._tool_rag.search_by_embedding(query_embedding, top_k=settings.rag_top_k_tools)
+                else:
+                    tools = self._tool_rag.search(query, top_k=settings.rag_top_k_tools)
                 if tools:
                     result["tools"] = tools
                     logger.info(f"【RAG检索】向量检索找到 {len(tools)} 个工具")
                 else:
-                    # ChromaDB 返回空，降级到关键词匹配
                     logger.warning("【RAG检索】向量检索无结果，降级到关键词匹配")
                     result["tools"] = self._keyword_search_tools(query, settings.rag_top_k_tools)
             except Exception as e:
-                # ChromaDB 异常，降级到关键词匹配
                 logger.warning(f"【RAG检索】向量检索失败: {e}，降级到关键词匹配")
                 result["tools"] = self._keyword_search_tools(query, settings.rag_top_k_tools)
                 result["error"] = str(e)
 
-        # 2. Knowledge RAG 检索
         if hasattr(self, '_knowledge_rag') and self._knowledge_rag:
             try:
                 knowledge = self._knowledge_rag.get_relevant_knowledge(
-                    query, threshold=settings.rag_similarity_threshold
+                    query,
+                    threshold=settings.rag_similarity_threshold,
+                    query_embedding=query_embedding,
                 )
                 if knowledge:
                     result["knowledge"] = knowledge
@@ -130,19 +236,18 @@ class AgentOrchestrator:
             except Exception as e:
                 logger.warning(f"【RAG检索】KnowledgeRAG 失败: {e}")
 
-        # 缓存结果
         self._query_cache[cache_key] = result
         return result
 
     def _get_rag_context(self, query: str, user_id: Optional[str] = None) -> str:
         """获取 RAG 上下文（相关工具 + 业务知识 + 长期记忆）"""
-        from settings import get_settings
+        from agent.settings import get_settings
         settings = get_settings()
 
         context_parts = []
 
-        # 使用合并检索（一次 embedding）
-        rag_result = self._search_all_rag(query)
+        # 使用合并检索
+        rag_result = self._search_all_rag(query, user_id)
 
         # 1. 构建工具上下文
         if rag_result["tools"]:
@@ -160,7 +265,15 @@ class AgentOrchestrator:
         # 3. 长期记忆检索
         if self._memory_rag and user_id:
             try:
-                memories = self._memory_rag.search(query, user_id, top_k=settings.memory_rag_top_k)
+                query_embedding = self._get_query_embedding(query)
+                if query_embedding is not None and hasattr(self._memory_rag, "search_by_embedding"):
+                    memories = self._memory_rag.search_by_embedding(
+                        query_embedding,
+                        user_id,
+                        top_k=settings.memory_rag_top_k,
+                    )
+                else:
+                    memories = self._memory_rag.search(query, user_id, top_k=settings.memory_rag_top_k)
                 if memories:
                     # 按相似度阈值过滤
                     threshold = settings.memory_similarity_threshold
@@ -252,7 +365,7 @@ class AgentOrchestrator:
 
     def _find_tool(self, tool_name: str):
         """根据名称查找工具（使用缓存 RAG + 关键词降级）"""
-        from settings import get_settings
+        from agent.settings import get_settings
         settings = get_settings()
 
         # 1. 直接匹配
@@ -339,7 +452,7 @@ class AgentOrchestrator:
         """执行工具（带详细日志）"""
         logger.info("=" * 60)
         logger.info(f"【工具调用】>>> 开始调用工具: {tool_name}")
-        logger.info(f"【工具调用】    请求参数: {params}")
+        logger.info(f"【工具调用】    请求参数: {summarize_for_log(params)}")
 
         tool = self._find_tool(tool_name)
         if not tool:
@@ -347,13 +460,18 @@ class AgentOrchestrator:
             logger.error(f"【工具调用】!!! 工具未找到: {tool_name}")
             return f"错误：未找到工具 '{tool_name}'，可用工具: {available}"
 
-        params = self._normalize_params(params, tool)
-        logger.info(f"【工具调用】    规范化参数: {params}")
+        params = normalize_tool_params(params, tool)
+        missing = validate_required_params(params, tool)
+        if missing:
+            logger.warning(f"【工具调用】缺少必要参数: {missing}")
+            return f"缺少必要参数: {', '.join(missing)}"
+
+        logger.info(f"【工具调用】    规范化参数: {summarize_for_log(params)}")
 
         try:
             logger.info(f"【工具调用】    正在执行...")
             result = tool.invoke(params)
-            result_preview = str(result)[:500] + "..." if len(str(result)) > 500 else str(result)
+            result_preview = summarize_for_log(result, max_length=SAFE_LOG_LENGTH)
             logger.info(f"【工具调用】<<< 工具执行成功")
             logger.info(f"【工具调用】    返回结果: {result_preview}")
             logger.info("=" * 60)
@@ -368,20 +486,12 @@ class AgentOrchestrator:
         from langchain_core.prompts import PromptTemplate
         from langchain_core.output_parsers.string import StrOutputParser
 
-        template = """你是一个智能助手。用户问了以下问题：
-
-问题：{question}
-
-后端工具返回了原始数据：
+        template = """后端已返回以下查询结果：
 
 {tool_result}
 
-请将上述数据以清晰的 Markdown 格式返回给用户，包括：
-1. 简要说明查询结果
-2. 用表格或列表展示关键数据
-3. 如有需要，添加简单总结
-
-直接返回 Markdown 内容，不要额外解释："""
+请用 1 句话简要说明查询到了什么（条数、关键摘要）。
+直接返回这段话，不要重复表格内容，不要额外解释。"""
 
         prompt = PromptTemplate.from_template(template)
         chain = prompt | self.llm | StrOutputParser()
@@ -401,31 +511,25 @@ class AgentOrchestrator:
         """处理用户输入"""
         try:
             logger.info("=" * 50)
-            logger.info(f"【开始处理】用户输入: {user_input[:100]}")
+            logger.info(f"【开始处理】用户输入: {summarize_for_log(user_input)}")
 
             # 清理请求级缓存
             self._query_cache.clear()
+            self._query_embedding_cache.clear()
 
             # 1. 意图识别
             logger.info("【步骤1】开始意图识别...")
             intent_result = self.intent_chain.invoke({"user_input": user_input})
             logger.info(f"【步骤1】意图识别返回: {intent_result}, 类型: {type(intent_result)}")
 
-            intent_obj = intent_result if hasattr(intent_result, 'intent') else None
-
-            if intent_obj:
-                intent_type = intent_obj.intent
-                logger.info(f"【意图识别】类型: {intent_type}, 原因: {intent_obj.reason}")
-            else:
-                intent_type = "query"
-                logger.warning("【意图识别】降级处理，默认按 query 处理")
+            intent_type = resolve_intent_type(intent_result, user_input)
 
             # 2. 路由分发
             logger.info(f"【步骤2】开始路由分发，意图类型: {intent_type}")
 
             if intent_type in ("query", "statistic"):
                 logger.info("【路由】进入查询/统计处理流程")
-                logger.info(f"【历史记录】{self.memory_manager.get_history(user_id)[:200]}")
+                logger.info(f"【历史记录】{summarize_for_log(self.memory_manager.get_history(user_id))}")
 
                 # RAG 增强（使用缓存避免重复 embedding）
                 rag_context = self._get_rag_context(user_input, user_id)
@@ -435,29 +539,28 @@ class AgentOrchestrator:
                     "chat_history": self.memory_manager.get_history(user_id),
                     "rag_context": rag_context
                 })
-                logger.info(f"【查询链返回】原始响应: {str(raw_response)[:300]}")
+                logger.info(f"【查询链返回】原始响应: {summarize_for_log(raw_response)}")
 
-                parsed = self._parse_llm_json(raw_response)
-                logger.info(f"【调试】parsed 内容: {parsed}, _tools_map 工具数: {len(self._tools_map)}")
+                decision = coerce_tool_decision(raw_response)
+                logger.info(f"【调试】decision 内容: {decision}, _tools_map 工具数: {len(self._tools_map)}")
 
-                need_tool = parsed.get("need_tool") if parsed else None
-                tool_name = parsed.get("tool") if parsed else None
-
-                if isinstance(need_tool, str):
-                    need_tool = need_tool.lower() == "true"
+                need_tool = decision.need_tool if decision else None
+                tool_name = decision.tool if decision else None
 
                 logger.info(f"【调试】need_tool={need_tool}, tool={tool_name}")
 
-                if parsed and need_tool and tool_name:
-                    params = parsed.get("params", {})
-                    logger.info(f"【工具调用】{tool_name}，参数: {params}")
+                if decision and need_tool and tool_name:
+                    params = decision.params
+                    logger.info(f"【工具调用】{tool_name}，参数: {summarize_for_log(params)}")
                     tool_result = self._execute_tool(tool_name, params)
-                    logger.info("【结果润色】开始润色工具返回结果...")
-                    response = self._polish_result(tool_result, user_input)
-                elif parsed and not need_tool:
-                    response = parsed.get("answer", "无法理解您的问题")
+                    rendered_result = render_tool_result(tool_result, user_input)
+                    logger.info("【结果渲染】本地表格生成完成")
+                    logger.info("【结果润色】开始 LLM 一句话总结...")
+                    response = self._polish_result(rendered_result, user_input)
+                elif decision and not need_tool:
+                    response = decision.answer or "无法理解您的问题"
                 else:
-                    response = raw_response
+                    response = str(raw_response)
                     logger.warning("【解析失败】降级为直接返回 LLM 输出")
 
             elif intent_type == "chat":
@@ -466,7 +569,7 @@ class AgentOrchestrator:
                     "input": user_input,
                     "chat_history": self.memory_manager.get_history(user_id)
                 })
-                logger.info(f"【闲聊链返回】类型: {type(response).__name__}, 内容: {str(response)[:200]}")
+                logger.info(f"【闲聊链返回】类型: {type(response).__name__}, 内容: {summarize_for_log(response)}")
                 if isinstance(response, dict):
                     response = response.get("text", str(response))
             else:
@@ -480,7 +583,7 @@ class AgentOrchestrator:
 
             # 4. 长期记忆：轮次计数和摘要生成
             turn_count = self.memory_manager.increment_turn(user_id)
-            from settings import get_settings
+            from agent.settings import get_settings
             settings = get_settings()
             threshold = settings.memory_summary_threshold
 
@@ -499,16 +602,15 @@ class AgentOrchestrator:
                     )
                     if memory_id:
                         logger.info(f"【长期记忆】摘要已存储: {memory_id}")
-                        # 清空短期记忆并重置轮次
-                        self.memory_manager.clear(user_id)
+                        self.memory_manager.trim_history(user_id, keep_last_pairs=settings.memory_recent_pairs)
                         self.memory_manager.reset_turn_count(user_id)
-                        logger.info("【长期记忆】短期记忆已清空，轮次已重置")
+                        logger.info("【长期记忆】已裁剪短期记忆并重置轮次")
                     else:
                         logger.warning("【长期记忆】摘要存储失败")
                 else:
                     logger.warning("【长期记忆】摘要生成失败")
 
-            logger.info(f"【最终响应】{str(response)[:100]}")
+            logger.info(f"【最终响应】{summarize_for_log(response)}")
 
             return str(response)
 
