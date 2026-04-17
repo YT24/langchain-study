@@ -502,7 +502,7 @@ class AgentOrchestrator:
                 "tool_result": tool_result
             })
             logger.info("【结果润色】LLM 润色完成")
-            return polished
+            return f"{polished}\n\n{tool_result}"
         except Exception as e:
             logger.error(f"【结果润色】失败: {e}，返回原始结果")
             return tool_result

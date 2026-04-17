@@ -60,7 +60,8 @@ def test_query_path_executes_tool_renders_locally_and_updates_memory():
 
     response = orchestrator.process("帮我查订单", user_id="u1")
 
-    # Response includes the LLM one-sentence summary
+    # Response includes the LLM one-sentence summary AND the Markdown table
     assert "已为您查到" in response
+    assert "| orderNo | status |" in response
     assert memory.user_messages == [("帮我查订单", "u1")]
     assert memory.ai_messages == [(response, "u1")]
