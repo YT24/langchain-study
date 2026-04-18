@@ -15,6 +15,12 @@ backend:
 # Agent 服务配置
 agent:
   port: 5001
+  verbose_logs: false
+
+# Embedding Provider 配置
+embedding:
+  provider: "local"
+  base_url: ""
 
 # Memory 配置
 memory:

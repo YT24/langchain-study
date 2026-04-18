@@ -1,7 +1,5 @@
-from langchain_core.prompts import PromptTemplate
-from schemas.intent import Intent
-from prompts import get_intent_prompt
-from typing import Union
+from agent.prompts import get_intent_prompt
+from agent.schemas.intent import Intent
 
 
 def create_intent_chain(llm):

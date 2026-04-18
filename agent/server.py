@@ -2,7 +2,9 @@ import logging
 
 from flask import Flask, request, jsonify
 
-from dependencies import initialize_dependencies
+from agent.chains.orchestrator import summarize_for_log
+from agent.dependencies import initialize_dependencies
+from agent.settings import get_settings
 
 # 配置日志
 logging.basicConfig(
@@ -20,10 +22,31 @@ logger = logging.getLogger(__name__)
 
 app = Flask(__name__)
 
+settings = get_settings()
+
 # 初始化全局编排器
 logger.info("正在初始化 Agent...")
 orchestrator = initialize_dependencies()
 logger.info("初始化完成 Agent...")
+
+
+
+def _should_log_verbose() -> bool:
+    return settings.verbose_agent_logs
+
+
+
+def _log_request_response(prefix: str, payload) -> None:
+    if _should_log_verbose():
+        logger.info(f"{prefix}{summarize_for_log(payload)}")
+    else:
+        logger.info(prefix)
+
+
+
+def refresh_orchestrator() -> None:
+    global orchestrator
+    orchestrator = initialize_dependencies()
 
 
 @app.route('/api/chat', methods=['POST'])
@@ -37,11 +60,11 @@ def chat():
         return jsonify({'success': False, 'message': '消息不能为空'}), 400
 
     try:
-        logger.info(f"【收到请求】用户ID: {user_id}")
-        logger.info(f"【收到请求】消息: {message[:100]}")
+        _log_request_response("【收到请求】用户ID: ", f"userId={user_id}")
+        _log_request_response("【收到请求】消息: ", message)
         response = orchestrator.process(message, user_id=user_id)
         logger.info(f"【返回响应】类型: {type(response).__name__}")
-        logger.info(f"【返回响应】内容: {str(response)[:100]}")
+        _log_request_response("【返回响应】内容: ", response)
         return jsonify({'success': True, 'response': response})
     except Exception as e:
         logger.error(f"【处理失败】错误: {str(e)}")
@@ -54,10 +77,9 @@ def chat():
 def reload_tools():
     """重新加载工具"""
     try:
-        from settings import get_settings
-        from tools import reload_tools as reload_tools_func
+        from agent.settings import get_settings
+        from agent.tools import reload_tools as reload_tools_func
 
-        settings = get_settings()
         new_tools = reload_tools_func(settings.backend_url)
 
         # 更新 orchestrator 的工具
@@ -88,7 +110,7 @@ def health():
 
 
 if __name__ == '__main__':
-    from settings import get_settings
+    from agent.settings import get_settings
     settings = get_settings()
     app.run(
         host='0.0.0.0',

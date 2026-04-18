@@ -1,5 +1,6 @@
 from langchain_core.prompts import PromptTemplate
-from config.loader import get
+
+from agent.config.loader import get
 
 # 意图识别
 INTENT_TEMPLATE = get("prompts.yml", "intent", "template")

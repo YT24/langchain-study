@@ -1,5 +1,6 @@
 from langchain_core.output_parsers.string import StrOutputParser
-from prompts import get_chat_prompt
+
+from agent.prompts import get_chat_prompt
 
 
 def create_chat_chain(llm):

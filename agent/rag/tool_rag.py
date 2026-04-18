@@ -43,7 +43,7 @@ class ToolRAG:
                 self._collection = self._client.get_collection("tool_descriptions")
                 logger.info(f"【ToolRAG】加载已有集合，当前工具数: {self._collection.count()}")
             except Exception:
-                from rag.embeddings import get_embedding_dim
+                from agent.rag.embeddings import get_embedding_dim
                 dim = get_embedding_dim()
                 self._collection = self._client.create_collection(
                     name="tool_descriptions",
@@ -78,7 +78,7 @@ class ToolRAG:
         try:
             if self._collection.count() > 0:
                 self._client.delete_collection("tool_descriptions")
-                from rag.embeddings import get_embedding_dim
+                from agent.rag.embeddings import get_embedding_dim
                 dim = get_embedding_dim()
                 self._collection = self._client.create_collection(
                     name="tool_descriptions",
@@ -142,17 +142,8 @@ class ToolRAG:
             except Exception as e:
                 logger.error(f"【ToolRAG】索引失败: {e}，将使用关键词匹配")
 
-    def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
-        """语义检索最相关的工具
-
-        Args:
-            query: 用户查询
-            top_k: 返回数量
-
-        Returns:
-            工具信息列表
-        """
-        # 如果未初始化或集合为空，返回空
+    def search_by_embedding(self, query_embedding: List[float], top_k: int = 3) -> List[Dict[str, Any]]:
+        """使用已计算的 query embedding 检索相关工具"""
         if not self._initialized or not self._collection:
             return []
 
@@ -161,24 +152,17 @@ class ToolRAG:
             return []
 
         try:
-            # 获取 query 的 embedding
-            query_embedding = self.embedding_manager.embed_query(query)
-
-            # 检索
             results = self._collection.query(
                 query_embeddings=[query_embedding],
                 n_results=top_k,
                 include=["documents", "metadatas", "distances"]
             )
 
-            # 整理结果
             tools = []
             if results and results['ids']:
                 for i, tool_id in enumerate(results['ids'][0]):
                     distance = results['distances'][0][i] if 'distances' in results else 0
                     metadata = results['metadatas'][0][i] if 'metadatas' in results else {}
-
-                    # 将距离转换为相似度 (0-1, 越大越相似)
                     similarity = 1 - distance if distance is not None else 0
 
                     tools.append({
@@ -189,12 +173,29 @@ class ToolRAG:
                         "distance": distance
                     })
 
+            return tools
+
+        except Exception as e:
+            logger.error(f"【ToolRAG】检索失败: {e}")
+            return []
+
+    def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
+        """语义检索最相关的工具
+
+        Args:
+            query: 用户查询
+            top_k: 返回数量
+
+        Returns:
+            工具信息列表
+        """
+        try:
+            query_embedding = self.embedding_manager.embed_query(query)
+            tools = self.search_by_embedding(query_embedding, top_k=top_k)
             logger.info(f"【ToolRAG】检索 query='{query}' 返回 {len(tools)} 个结果")
             for t in tools:
                 logger.info(f"  - {t['tool_name']}: 相似度={t['similarity']:.3f}")
-
             return tools
-
         except Exception as e:
             logger.error(f"【ToolRAG】检索失败: {e}")
             return []

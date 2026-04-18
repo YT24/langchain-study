@@ -1,7 +1,7 @@
 from functools import lru_cache
 import os
 
-from config.loader import get as get_config
+from agent.config.loader import get as get_config
 
 
 def _setup_hf_cache():
@@ -53,10 +53,25 @@ class Settings:
         self.memory_rag_top_k = get_config("rag.yml", "memory", "top_k", default=3)
         self.memory_summary_threshold = get_config("rag.yml", "memory", "summary_threshold", default=5)
         self.memory_similarity_threshold = get_config("rag.yml", "memory", "similarity_threshold", default=0.5)
+        self.memory_recent_pairs = get_config("rag.yml", "memory", "recent_pairs", default=2)
 
         # Tools
         self.http_timeout = get_config("tools.yml", "http", "timeout", default=30)
         self.tool_match_threshold = get_config("tools.yml", "matching", "rag_threshold", default=0.4)
+        self.embedding_provider = get_config("settings.yml", "embedding", "provider", default="local")
+        self.embedding_base_url = get_config("settings.yml", "embedding", "base_url", default="")
+        self.embedding_api_key = os.environ.get("EMBEDDING_API_KEY", "")
+        self.verbose_agent_logs = get_config("settings.yml", "agent", "verbose_logs", default=False)
+        self.disable_rag = os.environ.get("DISABLE_RAG", "0") == "1"
+
+        if not self.embedding_base_url:
+            self.embedding_base_url = self.deepseek_base_url
+        if not self.embedding_api_key:
+            self.embedding_api_key = self.deepseek_api_key
+
+
+def reset_settings_cache() -> None:
+    get_settings.cache_clear()
 
 
 @lru_cache

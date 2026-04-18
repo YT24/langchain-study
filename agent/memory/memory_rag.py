@@ -120,25 +120,14 @@ class MemoryRAG:
             logger.error(f"【MemoryRAG】添加记忆失败: {e}")
             return None
 
-    def search(self, query: str, user_id: str, top_k: int = 3) -> List[Dict[str, Any]]:
-        """语义检索用户相关记忆
-
-        Args:
-            query: 检索 query
-            user_id: 用户 ID
-            top_k: 返回数量
-
-        Returns:
-            记忆列表
-        """
+    def search_by_embedding(self, query_embedding: List[float], user_id: str, top_k: int = 3) -> List[Dict[str, Any]]:
+        """使用已计算的 query embedding 检索用户相关记忆"""
         self._init_chroma()
 
         if not self._initialized or not self._collection:
             return []
 
         try:
-            query_embedding = self.embedding_manager.embed_query(query)
-
             results = self._collection.query(
                 query_embeddings=[query_embedding],
                 n_results=top_k,
@@ -151,7 +140,6 @@ class MemoryRAG:
                 for i, memory_id in enumerate(results['ids'][0]):
                     distance = results['distances'][0][i] if 'distances' in results else 0
                     metadata = results['metadatas'][0][i] if 'metadatas' in results else {}
-
                     similarity = 1 - distance if distance is not None else 0
 
                     memories.append({
@@ -165,9 +153,19 @@ class MemoryRAG:
                         "distance": distance
                     })
 
-            logger.info(f"【MemoryRAG】检索 user_id={user_id}, query='{query}' 返回 {len(memories)} 条记忆")
             return memories
 
+        except Exception as e:
+            logger.error(f"【MemoryRAG】检索失败: {e}")
+            return []
+
+    def search(self, query: str, user_id: str, top_k: int = 3) -> List[Dict[str, Any]]:
+        """语义检索用户相关记忆"""
+        try:
+            query_embedding = self.embedding_manager.embed_query(query)
+            memories = self.search_by_embedding(query_embedding, user_id, top_k=top_k)
+            logger.info(f"【MemoryRAG】检索 user_id={user_id}, query='{query}' 返回 {len(memories)} 条记忆")
+            return memories
         except Exception as e:
             logger.error(f"【MemoryRAG】检索失败: {e}")
             return []

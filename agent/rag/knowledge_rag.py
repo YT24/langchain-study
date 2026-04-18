@@ -111,7 +111,7 @@ class KnowledgeRAG:
                 self._collection = self._client.get_collection("business_knowledge")
                 logger.info(f"【KnowledgeRAG】加载已有知识库，当前条目数: {self._collection.count()}")
             except Exception:
-                from rag.embeddings import get_embedding_dim
+                from agent.rag.embeddings import get_embedding_dim
                 dim = get_embedding_dim()
                 self._collection = self._client.create_collection(
                     name="business_knowledge",
@@ -147,7 +147,7 @@ class KnowledgeRAG:
         try:
             if self._collection.count() > 0:
                 self._client.delete_collection("business_knowledge")
-                from rag.embeddings import get_embedding_dim
+                from agent.rag.embeddings import get_embedding_dim
                 dim = get_embedding_dim()
                 self._collection = self._client.create_collection(
                     name="business_knowledge",
@@ -188,16 +188,8 @@ class KnowledgeRAG:
             except Exception as e:
                 logger.error(f"【KnowledgeRAG】索引失败: {e}")
 
-    def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
-        """检索相关知识
-
-        Args:
-            query: 用户查询
-            top_k: 返回数量
-
-        Returns:
-            知识条目列表
-        """
+    def search_by_embedding(self, query_embedding: List[float], top_k: int = 3) -> List[Dict[str, Any]]:
+        """使用已计算的 query embedding 检索相关知识"""
         if not self._initialized or not self._collection:
             return []
 
@@ -206,8 +198,6 @@ class KnowledgeRAG:
             return []
 
         try:
-            query_embedding = self.embedding_manager.embed_query(query)
-
             results = self._collection.query(
                 query_embeddings=[query_embedding],
                 n_results=top_k,
@@ -229,24 +219,43 @@ class KnowledgeRAG:
                         "similarity": similarity
                     })
 
-            logger.info(f"【KnowledgeRAG】检索 query='{query}' 返回 {len(knowledge)} 条结果")
             return knowledge
 
         except Exception as e:
             logger.error(f"【KnowledgeRAG】检索失败: {e}")
             return []
 
-    def get_relevant_knowledge(self, query: str, threshold: float = 0.3) -> str:
-        """获取相关知识文本（合并为可读格式）
+    def search(self, query: str, top_k: int = 3) -> List[Dict[str, Any]]:
+        """检索相关知识
 
         Args:
-            query: 查询
-            threshold: 相似度阈值
+            query: 用户查询
+            top_k: 返回数量
 
         Returns:
-            格式化的知识文本
+            知识条目列表
         """
-        results = self.search(query, top_k=3)
+        try:
+            query_embedding = self.embedding_manager.embed_query(query)
+            knowledge = self.search_by_embedding(query_embedding, top_k=top_k)
+            logger.info(f"【KnowledgeRAG】检索 query='{query}' 返回 {len(knowledge)} 条结果")
+            return knowledge
+        except Exception as e:
+            logger.error(f"【KnowledgeRAG】检索失败: {e}")
+            return []
+
+    def get_relevant_knowledge(
+        self,
+        query: str,
+        threshold: float = 0.3,
+        query_embedding: Optional[List[float]] = None,
+    ) -> str:
+        """获取相关知识文本（合并为可读格式）"""
+        results = (
+            self.search_by_embedding(query_embedding, top_k=3)
+            if query_embedding is not None
+            else self.search(query, top_k=3)
+        )
         relevant = [r for r in results if r['similarity'] >= threshold]
 
         if not relevant:

@@ -24,3 +24,4 @@ memory:
   top_k: 3
   summary_threshold: 5  # 轮次阈值，达到该阈值生成摘要
   similarity_threshold: 0.5  # 记忆召回相似度阈值
+  recent_pairs: 2  # 摘要后保留的最近对话轮数
