@@ -7,12 +7,8 @@ export default defineConfig({
     port: 3000,
     cors: true,
     proxy: {
-      '/api/chat': {
-        target: 'http://localhost:5001',
-        changeOrigin: true
-      },
       '/api': {
-        target: 'http://localhost:8080',
+        target: 'http://localhost:5001',
         changeOrigin: true
       }
     }

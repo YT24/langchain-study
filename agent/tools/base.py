@@ -1,18 +1,17 @@
 import functools
-import requests
+import logging
 from typing import Callable
+
+logger = logging.getLogger(__name__)
 
 
 def handle_tool_errors(func: Callable) -> Callable:
-    """工具错误处理装饰器"""
+    """工具错误处理装饰器：统一捕获异常并返回友好消息"""
     @functools.wraps(func)
     def wrapper(*args, **kwargs):
         try:
             return func(*args, **kwargs)
-        except requests.exceptions.Timeout:
-            return "错误：请求超时，请稍后重试"
-        except requests.exceptions.ConnectionError:
-            return "错误：后端服务不可用，请检查服务状态"
         except Exception as e:
-            return f"错误：{str(e)}"
+            logger.error(f"【工具异常】{func.__name__}: {e}")
+            return f"工具执行失败：{str(e)}"
     return wrapper

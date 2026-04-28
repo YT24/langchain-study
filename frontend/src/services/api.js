@@ -37,8 +37,8 @@ export const getToolById = (id) => api.get(`/admin/tools/${id}`)
 export const createTool = (data) => api.post('/admin/tools', data)
 export const updateTool = (id, data) => api.put(`/admin/tools/${id}`, data)
 export const deleteTool = (id) => api.delete(`/admin/tools/${id}`)
-export const enableTool = (id) => api.post(`/admin/tools/${id}/enable`)
-export const disableTool = (id) => api.post(`/admin/tools/${id}/disable`)
+export const enableTool = (name) => api.post(`/admin/tools/${encodeURIComponent(name)}/enable`)
+export const disableTool = (name) => api.post(`/admin/tools/${encodeURIComponent(name)}/disable`)
 
 // ========== 工具分类 ==========
 export const getCategories = () => api.get('/admin/tools/categories')

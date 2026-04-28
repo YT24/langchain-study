@@ -5,15 +5,13 @@ import { login } from '../services/api'
 export default function LoginPage() {
   const navigate = useNavigate()
   const [username, setUsername] = useState('')
-  const [password, setPassword] = useState('')
-  const [rememberMe, setRememberMe] = useState(false)
   const [loading, setLoading] = useState(false)
   const [error, setError] = useState('')
 
   const handleSubmit = async (e) => {
     e.preventDefault()
-    if (!username || !password) {
-      setError('请输入用户名和密码')
+    if (!username.trim()) {
+      setError('请输入用户名')
       return
     }
 
@@ -21,7 +19,7 @@ export default function LoginPage() {
     setError('')
 
     try {
-      const res = await login({ username, password, rememberMe })
+      const res = await login({ username: username.trim() })
       if (res.success) {
         localStorage.setItem('token', res.data.token)
         localStorage.setItem('user', JSON.stringify({
@@ -47,7 +45,7 @@ export default function LoginPage() {
         <div className="login-header">
           <div className="login-logo">🤖</div>
           <h1 className="login-title">智能 Agent 系统</h1>
-          <p className="login-subtitle">登录您的账户</p>
+          <p className="login-subtitle">输入用户名开始使用</p>
         </div>
 
         <form onSubmit={handleSubmit} className="login-form">
@@ -65,39 +63,13 @@ export default function LoginPage() {
             />
           </div>
 
-          <div className="form-group">
-            <label className="form-label">密码</label>
-            <div className="password-input-wrapper">
-              <input
-                type="password"
-                className="form-input"
-                placeholder="请输入密码"
-                value={password}
-                onChange={(e) => setPassword(e.target.value)}
-                autoComplete="current-password"
-              />
-              <button type="button" className="password-toggle">👁</button>
-            </div>
-          </div>
-
-          <div className="form-group form-group-inline">
-            <label className="checkbox-label">
-              <input
-                type="checkbox"
-                checked={rememberMe}
-                onChange={(e) => setRememberMe(e.target.checked)}
-              />
-              <span>记住我</span>
-            </label>
-          </div>
-
           <button type="submit" className="login-button" disabled={loading}>
-            {loading ? '登录中...' : '登 录'}
+            {loading ? '进入中...' : '进 入'}
           </button>
         </form>
 
         <div className="login-footer">
-          <p>还没有账户？<a href="/register">注册账号</a></p>
+          <p>首次使用？<a href="/register">输入用户名</a></p>
         </div>
       </div>
 
@@ -174,12 +146,6 @@ export default function LoginPage() {
           gap: 8px;
         }
 
-        .form-group-inline {
-          flex-direction: row;
-          align-items: center;
-          justify-content: space-between;
-        }
-
         .form-label {
           font-size: 14px;
           font-weight: 500;
@@ -207,46 +173,6 @@ export default function LoginPage() {
           border-color: rgba(99, 102, 241, 0.5);
           background: rgba(255, 255, 255, 0.08);
           box-shadow: 0 0 0 3px rgba(99, 102, 241, 0.1);
-        }
-
-        .password-input-wrapper {
-          position: relative;
-        }
-
-        .password-input-wrapper .form-input {
-          padding-right: 48px;
-        }
-
-        .password-toggle {
-          position: absolute;
-          right: 12px;
-          top: 50%;
-          transform: translateY(-50%);
-          background: none;
-          border: none;
-          cursor: pointer;
-          font-size: 18px;
-          opacity: 0.5;
-          transition: opacity 0.3s;
-        }
-
-        .password-toggle:hover {
-          opacity: 1;
-        }
-
-        .checkbox-label {
-          display: flex;
-          align-items: center;
-          gap: 8px;
-          cursor: pointer;
-          color: rgba(255, 255, 255, 0.6);
-          font-size: 14px;
-        }
-
-        .checkbox-label input[type="checkbox"] {
-          width: 18px;
-          height: 18px;
-          accent-color: #6366f1;
         }
 
         .login-button {

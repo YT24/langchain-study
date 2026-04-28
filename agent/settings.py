@@ -31,9 +31,12 @@ class Settings:
         self.deepseek_model = get_config("settings.yml", "deepseek", "model", default="deepseek-chat")
         self.deepseek_temperature = get_config("settings.yml", "deepseek", "temperature", default=0.7)
 
-        # Backend
-        self.backend_url = get_config("settings.yml", "backend", "url", default="http://localhost:8080")
-        self.backend_timeout = get_config("settings.yml", "backend", "timeout", default=30)
+        # Database
+        self.database_host = get_config("settings.yml", "database", "host", default="localhost")
+        self.database_port = get_config("settings.yml", "database", "port", default="3306")
+        self.database_user = get_config("settings.yml", "database", "user", default="root")
+        self.database_password = get_config("settings.yml", "database", "password", default="")
+        self.database_name = get_config("settings.yml", "database", "name", default="fff")
 
         # Agent
         self.agent_port = get_config("settings.yml", "agent", "port", default=5001)

@@ -1,1 +1,0 @@
-INSERT IGNORE INTO sys_tool_action (tool_id, name, display_name, description, base_url, http_method, endpoint, request_params, sort_order) VALUES (3, 'query_inventory', 'Query Inventory By SKU', 'Query inventory by SKU', 'http://localhost:8080', 'POST', '/tools/inventory/query', '{"sku": {"type": "string", "required": true, "description": "SKU code"}}', 1);

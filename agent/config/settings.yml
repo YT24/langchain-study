@@ -7,10 +7,13 @@ deepseek:
   model: "deepseek-chat"
   temperature: 0.7
 
-# Backend API 配置
-backend:
-  url: "http://localhost:8080"
-  timeout: 30
+# 数据库配置
+database:
+  host: "${DB_HOST:localhost}"
+  port: "${DB_PORT:3306}"
+  user: "${DB_USER:root}"
+  password: "${DB_PASSWORD:}"
+  name: "${DB_NAME:fff}"
 
 # Agent 服务配置
 agent:

@@ -1,1 +1,0 @@
-INSERT IGNORE INTO sys_tool_action (tool_id, name, display_name, description, base_url, http_method, endpoint, request_params, sort_order) VALUES (1, 'query_order_detail', 'Query Order Detail', 'Query order detail by order number', 'http://localhost:8080', 'POST', '/tools/order/query', '{"orderNo": {"type": "string", "required": true, "description": "Order number"}}', 2);
